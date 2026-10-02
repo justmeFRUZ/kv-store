@@ -52,3 +52,40 @@ fn main() {
     println!("get missing = {:?}", store.get("missing"));
     println!("get hello = {:?}", store.get("hello"));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_then_get_returns_value() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+        };
+        store.set("name", "Alice");
+        assert_eq!(store.get("name"), Some("Alice"));
+    }
+
+    #[test]
+    fn two_keys_in_same_bucket_are_both_retrievable() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 1],
+        };
+        store.set("name", "Alice");
+        store.set("city", "Tashkent");
+        assert_eq!(store.get("name"), Some("Alice"));
+        assert_eq!(store.get("city"), Some("Tashkent"));
+    }
+
+    #[test]
+    fn updating_a_key_in_a_bucket_replaces_the_value() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 1],
+        };
+        store.set("name", "Alice");
+        store.set("name", "Bob");
+        store.set("city", "Tashkent");
+        assert_eq!(store.get("name"), Some("Bob"));
+        assert_eq!(store.get("city"), Some("Tashkent"));
+    }
+}
