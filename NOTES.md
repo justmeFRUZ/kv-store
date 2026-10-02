@@ -32,3 +32,12 @@ Load factor is: **the ratio of entries to buckets — `n / k` — a measure of h
 When it gets high: **each bucket is holding multiple entries on average, so lookups increasingly have to walk a chain (or probe past collisions) instead of landing directly — performance degrades toward O(n), which is exactly why a table resizes once load factor crosses its threshold.**
 
 When it gets low: **most buckets sit empty — lookups are fast with almost no collisions, but memory is being spent on slots that aren't storing anything, which is why some implementations also shrink the table if load factor drops too far.**
+
+
+## Chaining 
+
+Why chains exist: **because a hash function can map two different keys to the same bucket, and you need somewhere to put both of them without overwriting one — a list per bucket lets a bucket hold any number of collided entries instead of just one.**
+
+What lookup does when a chain has more than one entry: **it can't just grab what's in the bucket and return — it has to walk the list, comparing each entry's key against the one it's looking for, until it finds the match (or reaches the end and concludes the key isn't present).**
+
+One thing chaining makes worse than a collision-free table: **lookup cost stops being a guaranteed single step — it becomes proportional to how many entries landed in that particular bucket, so a table with long chains (high load factor, or a poorly distributed hash function) degrades toward a linear scan instead of staying O(1).**
