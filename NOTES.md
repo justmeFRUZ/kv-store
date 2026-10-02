@@ -41,3 +41,11 @@ Why chains exist: **because a hash function can map two different keys to the sa
 What lookup does when a chain has more than one entry: **it can't just grab what's in the bucket and return — it has to walk the list, comparing each entry's key against the one it's looking for, until it finds the match (or reaches the end and concludes the key isn't present).**
 
 One thing chaining makes worse than a collision-free table: **lookup cost stops being a guaranteed single step — it becomes proportional to how many entries landed in that particular bucket, so a table with long chains (high load factor, or a poorly distributed hash function) degrades toward a linear scan instead of staying O(1).**
+
+## Open addressing — my words (Week 8)
+
+How it handles a collision: **instead of stacking collided entries in a list at one bucket, it puts the second entry in a different slot entirely — following a probe sequence (linear, quadratic, or double-hashed) from the original hashed slot until it finds one that's empty.**
+
+What lookup does when the slot it checks holds a different key: **it doesn't stop and conclude "not found" — an occupied slot with a different key just means some other key landed there first, so lookup continues to the next slot in the same probe sequence.**
+
+How you know a key is genuinely absent (vs just not in the slot you tried): **you keep probing until you hit a truly empty slot — since insertion always stops at the first empty slot it finds, a key can never sit past one, so reaching empty during a search is the real "not found" signal. This is also why deletion needs a separate "deleted" marker rather than just clearing the slot to empty — clearing it to empty would wrongly tell later searches to stop early, cutting off access to other keys whose probe sequence runs through that slot.**
