@@ -24,3 +24,11 @@ Deliberately out of scope for now:
 Open questions to settle during Week 8 weekdays, not now:
 - Hash function choice.
 - Initial bucket count and load-factor threshold.
+
+## Load factor 
+
+Load factor is: **the ratio of entries to buckets — `n / k` — a measure of how full the table actually is relative to its allocated size.**
+
+When it gets high: **each bucket is holding multiple entries on average, so lookups increasingly have to walk a chain (or probe past collisions) instead of landing directly — performance degrades toward O(n), which is exactly why a table resizes once load factor crosses its threshold.**
+
+When it gets low: **most buckets sit empty — lookups are fast with almost no collisions, but memory is being spent on slots that aren't storing anything, which is why some implementations also shrink the table if load factor drops too far.**
