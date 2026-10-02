@@ -49,3 +49,12 @@ How it handles a collision: **instead of stacking collided entries in a list at 
 What lookup does when the slot it checks holds a different key: **it doesn't stop and conclude "not found" — an occupied slot with a different key just means some other key landed there first, so lookup continues to the next slot in the same probe sequence.**
 
 How you know a key is genuinely absent (vs just not in the slot you tried): **you keep probing until you hit a truly empty slot — since insertion always stops at the first empty slot it finds, a key can never sit past one, so reaching empty during a search is the real "not found" signal. This is also why deletion needs a separate "deleted" marker rather than just clearing the slot to empty — clearing it to empty would wrongly tell later searches to stop early, cutting off access to other keys whose probe sequence runs through that slot.**
+
+## Chaining vs open addressing
+
+This project uses chaining, because: **it's the simpler structure to get right first — a `Vec` of key-value pairs per bucket means insert, get, and delete are all straightforward operations on a list, with no probe-sequence logic to get subtly wrong. It also tolerates a much higher load factor (1–3) before performance degrades, and degrades gradually rather than falling off a cliff near load factor 1.0 the way open addressing does.**
+
+Open addressing would be the better pick here if: **cache performance mattered more than simplicity — everything lives in one contiguous array instead of scattered list nodes, so at low load factors it can genuinely be faster due to better locality. It'd also make sense if memory overhead per entry mattered a lot, since chaining pays for list/pointer overhead per bucket that open addressing avoids.**
+
+One thing I'd have to solve if I switched to open addressing that chaining doesn't force me to solve: **deletion with tombstones — I'd need a third slot state (not just empty/occupied, but empty/occupied/deleted) so that removing an entry doesn't break the probe sequence for other keys that happen to probe past that slot. Chaining sidesteps this completely since removing from a bucket's list has no ordering dependency on other keys.**
+
