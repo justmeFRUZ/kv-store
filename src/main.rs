@@ -25,6 +25,9 @@ impl Store {
             }
         }
         bucket.push((key.to_string(), value.to_string()));
+        if self.load_factor() > 0.75 {
+            self.grow();
+        }
     }
 
     fn get(&self, key: &str) -> Option<&str> {
@@ -49,6 +52,17 @@ impl Store {
     fn load_factor(&self) -> f64 {
         let entries: usize = self.buckets.iter().map(|bucket| bucket.len()).sum();
         entries as f64 / self.buckets.len() as f64
+    }
+
+    fn grow(&mut self) {
+        let new_len = self.buckets.len() * 2;
+        let old = std::mem::replace(&mut self.buckets, vec![Vec::new(); new_len]);
+        for bucket in old {
+            for (key, value) in bucket {
+                let idx = self.bucket_index(&key);
+                self.buckets[idx].push((key, value));
+            }
+        }
     }
 }
 
