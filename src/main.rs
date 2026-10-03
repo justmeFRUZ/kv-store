@@ -148,4 +148,22 @@ mod tests {
         assert_eq!(store.delete("name"), Some("Alice".to_string()));
         assert_eq!(store.get("name"), None);
     }
+
+    #[test]
+    fn resize_preserves_all_keys() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+        };
+        for i in 0..20 {
+            let key = format!("key{}", i);
+            let value = format!("value{}", i);
+            store.set(&key, &value);
+        }
+        assert!(store.buckets.len() > 16, "resize did not fire");
+        for i in 0..20 {
+            let key = format!("key{}", i);
+            let expected = format!("value{}", i);
+            assert_eq!(store.get(&key), Some(expected.as_str()));
+        }
+    }
 }
