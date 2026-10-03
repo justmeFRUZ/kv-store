@@ -37,6 +37,14 @@ impl Store {
         }
         None
     }
+
+    fn delete(&mut self, key: &str) -> Option<String> {
+        let idx = self.bucket_index(key);
+        let bucket = &mut self.buckets[idx];
+        let pos = bucket.iter().position(|entry| entry.0 == key)?;
+        let (_, value) = bucket.remove(pos);
+        Some(value)
+    }
 }
 
 fn main() {
@@ -51,6 +59,10 @@ fn main() {
     println!("get name = {:?}", store.get("name"));
     println!("get missing = {:?}", store.get("missing"));
     println!("get hello = {:?}", store.get("hello"));
+
+    println!("delete name = {:?}", store.delete("name"));
+    println!("get name after delete = {:?}", store.get("name"));
+    println!("delete missing = {:?}", store.delete("missing"));
 }
 
 #[cfg(test)]
@@ -87,5 +99,33 @@ mod tests {
         store.set("city", "Tashkent");
         assert_eq!(store.get("name"), Some("Bob"));
         assert_eq!(store.get("city"), Some("Tashkent"));
+    }
+
+    #[test]
+    fn delete_nonexistent_key_returns_none() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+        };
+        store.set("name", "Alice");
+        assert_eq!(store.delete("missing"), None);
+        assert_eq!(store.get("name"), Some("Alice"));
+    }
+
+    #[test]
+    fn delete_from_empty_bucket_returns_none() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+        };
+        assert_eq!(store.delete("anything"), None);
+    }
+
+    #[test]
+    fn delete_only_item_in_bucket_leaves_bucket_empty() {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 1],
+        };
+        store.set("name", "Alice");
+        assert_eq!(store.delete("name"), Some("Alice".to_string()));
+        assert_eq!(store.get("name"), None);
     }
 }
