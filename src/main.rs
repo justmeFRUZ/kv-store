@@ -45,6 +45,11 @@ impl Store {
         let (_, value) = bucket.remove(pos);
         Some(value)
     }
+
+    fn load_factor(&self) -> f64 {
+        let entries: usize = self.buckets.iter().map(|bucket| bucket.len()).sum();
+        entries as f64 / self.buckets.len() as f64
+    }
 }
 
 fn main() {
@@ -59,6 +64,7 @@ fn main() {
     println!("get name = {:?}", store.get("name"));
     println!("get missing = {:?}", store.get("missing"));
     println!("get hello = {:?}", store.get("hello"));
+    println!("load factor = {}", store.load_factor());
 
     println!("delete name = {:?}", store.delete("name"));
     println!("get name after delete = {:?}", store.get("name"));
