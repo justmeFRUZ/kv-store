@@ -8,6 +8,7 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 }
 struct Store {
     buckets: Vec<Vec<(String, String)>>,
+    len: usize,
 }
 
 impl Store {
@@ -25,6 +26,7 @@ impl Store {
             }
         }
         bucket.push((key.to_string(), value.to_string()));
+        self.len += 1;
         if self.load_factor() > 0.75 {
             self.grow();
         }
@@ -46,12 +48,12 @@ impl Store {
         let bucket = &mut self.buckets[idx];
         let pos = bucket.iter().position(|entry| entry.0 == key)?;
         let (_, value) = bucket.remove(pos);
+        self.len -= 1;
         Some(value)
     }
 
     fn load_factor(&self) -> f64 {
-        let entries: usize = self.buckets.iter().map(|bucket| bucket.len()).sum();
-        entries as f64 / self.buckets.len() as f64
+        self.len as f64 / self.buckets.len() as f64
     }
 
     fn grow(&mut self) {
@@ -69,6 +71,7 @@ impl Store {
 fn main() {
     let mut store = Store {
         buckets: vec![Vec::new(); 16],
+        len: 0,
     };
     println!("buckets count: {}", store.buckets.len());
     println!("fnv1a(\"hello\") = {}", fnv1a(b"hello"));
@@ -83,6 +86,28 @@ fn main() {
     println!("delete name = {:?}", store.delete("name"));
     println!("get name after delete = {:?}", store.get("name"));
     println!("delete missing = {:?}", store.delete("missing"));
+    bench_set();
+}
+
+fn bench_set() {
+    for n in [100usize, 1_000, 10_000, 100_000] {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+            len: 0,
+        };
+        let start = std::time::Instant::now();
+        for i in 0..n {
+            let key = format!("key{}", i);
+            store.set(&key, "v");
+        }
+        let elapsed = start.elapsed();
+        println!(
+            "set n={} buckets={} elapsed={:?}",
+            n,
+            store.buckets.len(),
+            elapsed
+        );
+    }
 }
 
 #[cfg(test)]
@@ -93,6 +118,7 @@ mod tests {
     fn set_then_get_returns_value() {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
+            len: 0,
         };
         store.set("name", "Alice");
         assert_eq!(store.get("name"), Some("Alice"));
@@ -102,6 +128,7 @@ mod tests {
     fn two_keys_in_same_bucket_are_both_retrievable() {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
+            len: 0,
         };
         store.set("name", "Alice");
         store.set("city", "Tashkent");
@@ -113,6 +140,7 @@ mod tests {
     fn updating_a_key_in_a_bucket_replaces_the_value() {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
+            len: 0,
         };
         store.set("name", "Alice");
         store.set("name", "Bob");
@@ -125,6 +153,7 @@ mod tests {
     fn delete_nonexistent_key_returns_none() {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
+            len: 0,
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("missing"), None);
@@ -135,6 +164,7 @@ mod tests {
     fn delete_from_empty_bucket_returns_none() {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
+            len: 0,
         };
         assert_eq!(store.delete("anything"), None);
     }
@@ -143,6 +173,7 @@ mod tests {
     fn delete_only_item_in_bucket_leaves_bucket_empty() {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
+            len: 0,
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("name"), Some("Alice".to_string()));
@@ -153,12 +184,14 @@ mod tests {
     fn resize_preserves_all_keys() {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
+            len: 0,
         };
         for i in 0..20 {
             let key = format!("key{}", i);
             let value = format!("value{}", i);
             store.set(&key, &value);
         }
+        assert_eq!(store.len, 20);
         assert!(store.buckets.len() > 16, "resize did not fire");
         for i in 0..20 {
             let key = format!("key{}", i);
