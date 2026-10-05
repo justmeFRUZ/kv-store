@@ -88,6 +88,7 @@ fn main() {
     println!("delete missing = {:?}", store.delete("missing"));
     bench_set();
     bench_get();
+    bench_delete();
 }
 
 fn bench_set() {
@@ -132,6 +133,35 @@ fn bench_get() {
         let sink = std::hint::black_box(sink);
         println!(
             "get n={} buckets={} elapsed={:?} sink={}",
+            n,
+            store.buckets.len(),
+            elapsed,
+            sink,
+        );
+    }
+}
+
+fn bench_delete() {
+    for n in [100usize, 1_000, 10_000, 100_000] {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+            len: 0,
+        };
+        let keys: Vec<String> = (0..n).map(|i| format!("key{}", i)).collect();
+        for key in &keys {
+            store.set(key, "v");
+        }
+        let mut sink: usize = 0;
+        let start = std::time::Instant::now();
+        for key in &keys {
+            if let Some(value) = store.delete(key) {
+                sink += value.len();
+            }
+        }
+        let elapsed = start.elapsed();
+        let sink = std::hint::black_box(sink);
+        println!(
+            "delete n={} buckets={} elapsed={:?} sink={}",
             n,
             store.buckets.len(),
             elapsed,
