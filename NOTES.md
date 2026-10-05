@@ -74,3 +74,9 @@ Per-op: get 46 → 166 ns/op, set 730–1010 ns/op, delete 113–309 ns/op. Flat
 get's per-op rises ~3.6× from n=100 to n=100000. Cache residency, not algorithm: at n=100 the whole table fits in L1/L2, at n=100000 each lookup is a cold memory access.
 
 Caveats: debug profile (release would be several× faster; debug chosen to match the Weekday 1 set table). Single run per size — shape is trustworthy, digits are not.
+
+## LRU cache — Week 11 design decision
+
+Representation: **index-based, not pointer-based.** Nodes live in a `Vec<Node>`, where `Node { key, value, prev: Option<usize>, next: Option<usize> }`. "Pointers" are indices into that Vec. Map is `HashMap<String, usize>` — key → node index.
+
+Why not `Rc<RefCell<Node>>`: **the plan warns that linked-list-in-Rust with mutable shared references is a known pain point, and explicitly blesses a Vec-based or index-based sidestep. The index approach has no borrow-checker fight, no `Rc`/`Weak` cycle-leak risk, and the same O(1) get/put/evict as the pointer version.**
