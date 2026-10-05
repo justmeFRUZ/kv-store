@@ -58,3 +58,19 @@ Open addressing would be the better pick here if: **cache performance mattered m
 
 One thing I'd have to solve if I switched to open addressing that chaining doesn't force me to solve: **deletion with tombstones — I'd need a third slot state (not just empty/occupied, but empty/occupied/deleted) so that removing an entry doesn't break the probe sequence for other keys that happen to probe past that slot. Chaining sidesteps this completely since removing from a bucket's list has no ordering dependency on other keys.**
 
+## Benchmarks — Week 10 (set / get / delete)
+
+Debug profile, single run per size (`cargo build`, run from `/tmp`). Same four sizes for all three benches. Sink = accumulated value lengths, `black_box`'d to prevent elision.
+
+| n       | buckets | set       | get       | delete   |
+|---------|---------|-----------|-----------|----------|
+| 100     | 256     | 96.6 µs   | 4.6 µs    | 30.9 µs  |
+| 1 000   | 2 048   | 751.5 µs  | 46.7 µs   | 112.7 µs |
+| 10 000  | 16 384  | 7.30 ms   | 808.3 µs  | 1.34 ms  |
+| 100 000 | 262 144 | 101.03 ms | 16.57 ms  | 22.75 ms |
+
+Per-op: get 46 → 166 ns/op, set 730–1010 ns/op, delete 113–309 ns/op. Flat within a small factor across four orders of magnitude — amortized O(1) visible in real numbers, not just Big-O shorthand.
+
+get's per-op rises ~3.6× from n=100 to n=100000. Cache residency, not algorithm: at n=100 the whole table fits in L1/L2, at n=100000 each lookup is a cold memory access.
+
+Caveats: debug profile (release would be several× faster; debug chosen to match the Weekday 1 set table). Single run per size — shape is trustworthy, digits are not.
