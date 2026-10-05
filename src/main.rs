@@ -237,6 +237,7 @@ mod tests {
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("name"), Some("Alice".to_string()));
+        assert_eq!(store.len, 0);
         assert_eq!(store.get("name"), None);
     }
 
