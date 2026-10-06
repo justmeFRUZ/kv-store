@@ -387,4 +387,18 @@ mod tests {
         assert_eq!(lru.get("a"), Some("1"));
         assert_eq!(lru.get("c"), Some("3"));
     }
+
+    #[test]
+    fn lru_get_on_middle_node_rewires_neighbors() {
+        let mut lru = LruCache::new(3);
+        lru.put("a", "1");
+        lru.put("b", "2");
+        lru.put("c", "3");
+        assert_eq!(lru.get("b"), Some("2"));
+        lru.put("d", "4");
+        assert_eq!(lru.get("a"), None);
+        assert_eq!(lru.get("b"), Some("2"));
+        assert_eq!(lru.get("c"), Some("3"));
+        assert_eq!(lru.get("d"), Some("4"));
+    }
 }
