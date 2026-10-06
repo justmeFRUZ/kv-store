@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in bytes {
@@ -68,6 +70,111 @@ impl Store {
     }
 }
 
+struct LruNode {
+    key: String,
+    value: String,
+    prev: Option<usize>,
+    next: Option<usize>,
+}
+
+struct LruCache {
+    nodes: Vec<LruNode>,
+    free: Vec<usize>,
+    map: HashMap<String, usize>,
+    head: Option<usize>,
+    tail: Option<usize>,
+    capacity: usize,
+}
+
+impl LruCache {
+    fn new(capacity: usize) -> Self {
+        LruCache {
+            nodes: Vec::new(),
+            free: Vec::new(),
+            map: HashMap::new(),
+            head: None,
+            tail: None,
+            capacity,
+        }
+    }
+
+    fn unlink(&mut self, idx: usize) {
+        let prev = self.nodes[idx].prev;
+        let next = self.nodes[idx].next;
+        match prev {
+            Some(p) => self.nodes[p].next = next,
+            None => self.head = next,
+        }
+        match next {
+            Some(n) => self.nodes[n].prev = prev,
+            None => self.tail = prev,
+        }
+    }
+
+    fn push_front(&mut self, idx: usize) {
+        self.nodes[idx].prev = None;
+        self.nodes[idx].next = self.head;
+        match self.head {
+            Some(h) => self.nodes[h].prev = Some(idx),
+            None => self.tail = Some(idx),
+        }
+        self.head = Some(idx);
+    }
+
+    fn move_to_front(&mut self, idx: usize) {
+        if self.head == Some(idx) {
+            return;
+        }
+        self.unlink(idx);
+        self.push_front(idx);
+    }
+
+    fn alloc(&mut self, key: &str, value: &str) -> usize {
+        let node = LruNode {
+            key: key.to_string(),
+            value: value.to_string(),
+            prev: None,
+            next: None,
+        };
+        if let Some(i) = self.free.pop() {
+            self.nodes[i] = node;
+            i
+        } else {
+            self.nodes.push(node);
+            self.nodes.len() - 1
+        }
+    }
+
+    fn get(&mut self, key: &str) -> Option<&str> {
+        let idx = *self.map.get(key)?;
+        self.move_to_front(idx);
+        Some(&self.nodes[idx].value)
+    }
+
+    fn put(&mut self, key: &str, value: &str) {
+        if let Some(&idx) = self.map.get(key) {
+            self.nodes[idx].value = value.to_string();
+            self.move_to_front(idx);
+        } else {
+            let idx = self.alloc(key, value);
+            self.map.insert(key.to_string(), idx);
+            self.push_front(idx);
+            if self.map.len() > self.capacity {
+                self.evict();
+            }
+        }
+    }
+
+    fn evict(&mut self) {
+        if let Some(t) = self.tail {
+            self.unlink(t);
+            let key = self.nodes[t].key.clone();
+            self.map.remove(&key);
+            self.free.push(t);
+        }
+    }
+}
+
 fn main() {
     let mut store = Store {
         buckets: vec![Vec::new(); 16],
@@ -89,6 +196,14 @@ fn main() {
     bench_set();
     bench_get();
     bench_delete();
+    let mut lru = LruCache::new(2);
+    lru.put("a", "1");
+    lru.put("b", "2");
+    let _ = lru.get("a");
+    lru.put("c", "3");
+    println!("lru a = {:?}", lru.get("a"));
+    println!("lru b = {:?}", lru.get("b"));
+    println!("lru c = {:?}", lru.get("c"));
 }
 
 fn bench_set() {
@@ -259,5 +374,17 @@ mod tests {
             let expected = format!("value{}", i);
             assert_eq!(store.get(&key), Some(expected.as_str()));
         }
+    }
+
+    #[test]
+    fn lru_evicts_least_recently_used() {
+        let mut lru = LruCache::new(2);
+        lru.put("a", "1");
+        lru.put("b", "2");
+        assert_eq!(lru.get("a"), Some("1"));
+        lru.put("c", "3");
+        assert_eq!(lru.get("b"), None);
+        assert_eq!(lru.get("a"), Some("1"));
+        assert_eq!(lru.get("c"), Some("3"));
     }
 }
