@@ -401,4 +401,19 @@ mod tests {
         assert_eq!(lru.get("c"), Some("3"));
         assert_eq!(lru.get("d"), Some("4"));
     }
+
+    #[test]
+    fn lru_put_existing_key_updates_value_and_promotes() {
+        let mut lru = LruCache::new(3);
+        lru.put("a", "1");
+        lru.put("b", "2");
+        lru.put("c", "3");
+        lru.put("a", "updated");
+        assert_eq!(lru.get("a"), Some("updated"));
+        lru.put("d", "4");
+        assert_eq!(lru.get("b"), None);
+        assert_eq!(lru.get("a"), Some("updated"));
+        assert_eq!(lru.get("c"), Some("3"));
+        assert_eq!(lru.get("d"), Some("4"));
+    }
 }
