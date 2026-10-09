@@ -88,6 +88,7 @@ struct LruCache {
 
 impl LruCache {
     fn new(capacity: usize) -> Self {
+        assert!(capacity > 0, "LruCache capacity must be > 0");
         LruCache {
             nodes: Vec::new(),
             free: Vec::new(),
@@ -442,5 +443,11 @@ mod tests {
         assert_eq!(lru.get("b"), None);
         assert_eq!(lru.get("c"), Some("3"));
         assert_eq!(lru.get("d"), Some("4"));
+    }
+
+    #[test]
+    #[should_panic(expected = "LruCache capacity must be > 0")]
+    fn lru_new_with_zero_capacity_panics() {
+        let _ = LruCache::new(0);
     }
 }
