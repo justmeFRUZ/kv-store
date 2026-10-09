@@ -430,4 +430,17 @@ mod tests {
         assert_eq!(lru.get("a"), None);
         assert_eq!(lru.get("d"), Some("4"));
     }
+
+    #[test]
+    fn lru_reuses_free_slot_after_eviction() {
+        let mut lru = LruCache::new(2);
+        lru.put("a", "1");
+        lru.put("b", "2");
+        lru.put("c", "3");
+        assert_eq!(lru.get("a"), None);
+        lru.put("d", "4");
+        assert_eq!(lru.get("b"), None);
+        assert_eq!(lru.get("c"), Some("3"));
+        assert_eq!(lru.get("d"), Some("4"));
+    }
 }
