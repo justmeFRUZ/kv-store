@@ -416,4 +416,18 @@ mod tests {
         assert_eq!(lru.get("c"), Some("3"));
         assert_eq!(lru.get("d"), Some("4"));
     }
+
+    #[test]
+    fn lru_capacity_boundary_evicts_only_past_capacity() {
+        let mut lru = LruCache::new(3);
+        lru.put("a", "1");
+        lru.put("b", "2");
+        lru.put("c", "3");
+        assert_eq!(lru.get("a"), Some("1"));
+        assert_eq!(lru.get("b"), Some("2"));
+        assert_eq!(lru.get("c"), Some("3"));
+        lru.put("d", "4");
+        assert_eq!(lru.get("a"), None);
+        assert_eq!(lru.get("d"), Some("4"));
+    }
 }
