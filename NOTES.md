@@ -80,3 +80,76 @@ Caveats: debug profile (release would be several× faster; debug chosen to match
 Representation: **index-based, not pointer-based.** Nodes live in a `Vec<Node>`, where `Node { key, value, prev: Option<usize>, next: Option<usize> }`. "Pointers" are indices into that Vec. Map is `HashMap<String, usize>` — key → node index.
 
 Why not `Rc<RefCell<Node>>`: **the plan warns that linked-list-in-Rust with mutable shared references is a known pain point, and explicitly blesses a Vec-based or index-based sidestep. The index approach has no borrow-checker fight, no `Rc`/`Weak` cycle-leak risk, and the same O(1) get/put/evict as the pointer version.**
+
+
+# Amortized cost of `Store::set` (resizing hash table, chaining)
+
+Code facts: `set` on an existing key updates in place (len unchanged, no grow).
+On a new key it pushes, does `len += 1`, then calls `grow` if `len / B > 0.75`,
+i.e. when `len = 0.75·B + 1`. `grow` doubles B. Never shrinks.
+Assumes B starts as a power of two >= 4 (code uses 16), so B is always a power
+of two and 0.75·B is an integer. Initial len = 0.
+
+## 1. Cost of a cheap `set` (new key, no grow)
+O(1) expected: hash the key bytes, index a bucket, scan it, push one entry, bump
+`len`, one load-factor check. Real work: two `to_string` allocations + hashing.
+(Bucket scan is O(1) only in expectation, under roughly uniform hashing. See caveat A.)
+
+## 2. Cost of a `set` that triggers `grow`
+O(len), and at the trigger B < (4/3)·len, so equivalently O(B).
+- `vec![Vec::new(); 2B]`: ONE heap allocation (the outer buffer). Each inner
+  `Vec::new()` has zero capacity, so no per-bucket allocation. Writing the 2B
+  empty Vec headers still costs O(B).
+- Rehash: every existing entry is re-hashed and pushed into the new table. The
+  Strings are moved, not copied. Each NON-EMPTY new bucket allocates once, on
+  its first push ("one per non-empty bucket", not "one per bucket").
+- The old buckets are dropped afterward.
+
+## 3. How many `set`s between resizes
+gap = 0.75·B, where B is the bucket count before the resize that opens the interval.
+Check from 16: resizes fire at len 13, 25, 49, 97. Gaps 12, 24, 48 = 0.75 x 16, 32, 64.
+Only new-key inserts count. Updates and deletes do not advance toward the next resize.
+Each resize rehashes about 0.75·B entries, so the work per insert in the gap is O(1).
+
+## 4. Is the expensive call rare?
+Yes. Resize cost is proportional to the gap that earned it, and gaps double, so
+total resize work over n inserts is a geometric series, at most about 2n
+(aggregate argument). The potential method below gives the same bound and
+handles mixed insert/update/delete sequences directly.
+
+## 5. Potential-function proof
+Let kappa be a constant with true cost of `grow` <= kappa·len (len after the push).
+Any non-growing operation has true cost <= 1.
+
+**Phi = c · max(0, len − B/2), with c = 3·kappa.**
+
+Why this shape:
+- Phi >= 0 by the clamp, and Phi(initial) = 0 since len = 0.
+- Phi = 0 right after every resize: new B' = 2B, len = 0.75·B + 1 <= B'/2.
+- Phi rises by c per new-key insert once len > B/2, reaching c·B/4 = 0.75·kappa·B
+  just before the trigger, enough to pay for a rehash costing about 0.75·kappa·B.
+
+Amortized cost c_hat = true cost + delta Phi, per operation:
+- Insert, no grow: <= 1 + c = 1 + 3·kappa.
+- Update existing key: <= 1 (delta Phi = 0).
+- Delete: <= 1 (delta Phi <= 0, since len decreases).
+- Insert that triggers grow: len before = 0.75·B.
+  delta Phi = −c·B/4. True cost <= 1 + kappa·(0.75·B + 1).
+  c_hat <= 1 + kappa + (0.75·kappa − c/4)·B = 1 + kappa  (B-term vanishes for c = 3·kappa).
+
+Every operation, whatever its type, has c_hat <= C = 1 + 3·kappa, bounded
+independently of the sequence it appears in. Summing over any n operations:
+total true cost <= C·n + Phi(initial) − Phi(final) <= C·n,
+since the Phi terms telescope, Phi(initial) = 0 and Phi(final) >= 0.
+So amortized O(1) holds for ANY interleaving of insert/update/delete.
+Sanity check, c = 2·kappa: the B-coefficient becomes +0.25·kappa, so the grow
+insert costs Theta(B) amortized and the bound fails. c >= 3·kappa is required.
+
+## Caveats
+A. The proof bounds resize cost only. Per-op O(1) also needs short buckets
+   (uniform hashing). Colliding or adversarial keys degrade `get`/`set`/`delete`
+   to O(n) regardless of resizing.
+B. A single `set` can still spike O(B). Amortized is not worst-case latency.
+C. If shrink-on-delete is ever added, this Phi no longer works. It would need a
+   symmetric low-load term (e.g. add c·max(0, B/4 − len)) and separated
+   thresholds (e.g. grow at 0.75, shrink at 0.25) to avoid thrashing.
