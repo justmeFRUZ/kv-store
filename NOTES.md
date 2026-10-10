@@ -153,3 +153,125 @@ B. A single `set` can still spike O(B). Amortized is not worst-case latency.
 C. If shrink-on-delete is ever added, this Phi no longer works. It would need a
    symmetric low-load term (e.g. add c·max(0, B/4 − len)) and separated
    thresholds (e.g. grow at 0.75, shrink at 0.25) to avoid thrashing.
+
+# LRU eviction correctness - proof
+
+Scope: `LruCache` (`nodes`, `free`, `map`, `head`, `tail`, `capacity`). Claim: after every
+operation, `evict` removes exactly the least recently used key, and the data structure stays
+well-formed. Single-threaded, safe Rust, so no aliasing or memory-safety argument is needed.
+
+### Invariant
+Holds for every state reachable via `new`, `get`, `put`, at operation boundaries.
+A node is LIVE if it has an entry in `map`. Slots in `free` are not live.
+
+- Ordering: reading `head -> next -> ... -> tail` visits every live node exactly once, in
+  non-increasing order of last-use.
+- Structure: for every live node u, `u.next = Some(v)` iff `v.prev = Some(u)`; also
+  `head.prev = None`, `tail.next = None`, and `head = None` iff `tail = None`.
+  Free slots may hold stale `prev`/`next`. This is safe because `alloc` overwrites the whole
+  `LruNode` before the slot re-enters the list.
+- Map/list consistency: `map` has exactly one entry per live node; each `map[k]` is the index
+  of a live node whose `.key` is `k`; no two keys share an index; list and free are
+  disjoint (no live slot is in `free`); and `map.len() <= capacity`.
+  The last bound holds only at operation boundaries. Inside `put` of a new key it is
+  transiently `capacity + 1`.
+
+Also fixed throughout: `capacity > 0` (enforced by the `assert!` in `new`).
+
+### What "last-use" means
+Not a field in `LruNode` and not stored anywhere. It is a proof device: the sequence number of
+the last operation (`put` on this key, or `get` hit on this key) that touched the node, with
+insertion counting as the node's first touch. Each such operation gets a number larger than
+all earlier ones. `get` misses touch nothing.
+
+### Reachability notes (two arms that cannot fire)
+- `move_to_front` is called only on a non-head live node (it returns early on the head).
+  So `unlink`'s `None => self.head = next` arm cannot fire (idx is not the head), and
+  `push_front`'s `None => self.tail = Some(idx)` arm cannot fire (the list holds idx and an
+  old head, so it is non-empty). Head and tail pointers need no check on this path beyond
+  `unlink`'s tail arm when idx is the tail.
+- In `put` of a new key, `push_front`'s `None` arm DOES fire when the list is empty (that is how
+  the first node becomes both head and tail). The claim above is specific to the
+  `move_to_front` path.
+- In `evict`, the list has `capacity + 1 >= 2` nodes (the new node was just pushed at the head),
+  so the tail `t` exists and is not the head. Hence `unlink`'s head arm cannot fire there, and
+  `evict`'s `None` branch (empty tail) cannot be reached either.
+- Net: `unlink`'s head arm and `evict`'s `None` arm are provably unreachable. They are
+  defensive code and not covered by tests. Do not claim coverage.
+
+### Preservation, per operation
+
+`new`: on return `nodes`, `free`, `map` are empty and `head = tail = None`. All three clauses
+hold vacuously. `capacity > 0` by the `assert!`.
+
+`get` miss: `map.get(key)?` returns early. Nothing is written to `map`, `nodes`, `free`,
+`head` or `tail`. State is unchanged, so every clause is preserved.
+
+`get` hit and `put` on an existing key: at most one `value` field is written (the `put` case),
+then `move_to_front(idx)` is called on a live index found in `map`. They never write `map`,
+`free` or any `key`, so map/list consistency and disjointness are untouched. Structure and
+ordering follow from the `move_to_front` argument below, with the touched node receiving the
+newest sequence number. `map.len()` does not change, so `evict` is never triggered.
+This is a strict sub-case of `move_to_front` with no map/free writes.
+
+`move_to_front(idx)`, idx live and not the head:
+- Never writes `map`, `free` or any `key`, so map/list consistency and disjointness are safe.
+- Structure: idx has `prev = Some(p)`. `unlink` sets `p.next = idx.next`, and either
+  `n.prev = Some(p)` or, if idx was the tail, `tail = Some(p)`. The other live nodes now form a
+  well-formed chain in the same relative order; idx's own links are stale. `push_front`
+  overwrites both of idx's links, sets the old head's `prev = Some(idx)`, and sets
+  `head = Some(idx)`. Structure is broken only between `unlink` and `push_front`, and nothing
+  reads the list in that window.
+- Ordering: `unlink` and `push_front` change links only. No other node's last-use timestamp is
+  modified by this operation. So the remaining nodes keep both their relative order and
+  their timestamps, and stay non-increasing. idx moves to the front, and the caller has just
+  touched it, so it holds the maximum timestamp. The whole list is non-increasing.
+
+`put` of a new key, cache not full (`map.len() < capacity`): the same as the full case below
+with the `evict` step omitted. After the insert `map.len() <= capacity`, so no eviction is
+needed and every clause holds as shown for the steps below.
+
+`put` of a new key, cache full (`map.len() = capacity`, key absent):
+1. `alloc` either pushes a brand-new index or pops one from `free`. A popped slot is not live
+   (list and free are disjoint), it leaves `free`, and the whole node is overwritten, so no
+   slot is in both and stale pointers vanish.
+2. `map.insert` adds one entry for a key that was absent, with a fresh index. Map and list are
+   one-to-one, now with `capacity + 1` entries (the scoped transient).
+3. `push_front` puts the new node at the head with the newest timestamp, so structure and
+   ordering hold (the empty-list `None` arm is the only case that sets `tail`).
+4. `capacity > 0`, so the list now has at least 2 nodes: the tail `t` exists and is not the new
+   node. This is exactly what the `assert!` in `new` protects. For `capacity = 1` the list is
+   `[new, old]` after `push_front`, so the claim holds because the push made it 2 nodes, not
+   because there were 2 before.
+5. `evict` runs (see below). Afterwards `map` and the list both have `capacity` entries.
+
+`evict`, called only from step 5 above (tail `t = Some`, `t.next = None`, `t.prev = Some(p)`):
+- Structure: `unlink(t)` sets `p.next = None` and `tail = Some(p)`, so the tail clause holds.
+  For the iff at `p`: the only live node with `prev = Some(p)` was `t`, and `t` is no
+  longer live (its map entry is removed). So no live `v` has `v.prev = Some(p)`, matching
+  `p.next = None`. Every other live node's links are untouched.
+- Map/list: the key is cloned, then the map entry whose index is `t` is removed (unique by
+  consistency), and only then is `t` pushed to `free`. After this `t` is in neither
+  `map` nor the list, it is in `free`, and its stale `prev` is harmless under the live-node
+  scope.
+- Ordering: `t` was last in a non-increasing sequence, so removing it leaves a non-increasing
+  sequence, and `t` had the smallest last-use. The removed key is the least recently used.
+
+### Conclusion
+Every operation maps invariant-satisfying states to invariant-satisfying states, and `new`
+establishes the invariant. By induction on the operation sequence the invariant always holds
+at operation boundaries. By the ordering clause, `tail` is the live node with the smallest
+last-use, so `evict` removes the least recently used key. Capacity is respected at every
+boundary.
+
+### Caveats
+- `unlink`'s `head = next` arm and `evict`'s `None` arm are provably unreachable under
+  `capacity > 0`: correct defensive code, not test-covered. Do not claim coverage.
+  (The test `lru_get_on_middle_node_rewires_neighbors` exercises `unlink`'s two `Some`
+  arms together, not these.)
+- The proof is about ordering and well-formedness, not performance. Nothing here bounds the
+  cost of `get`/`put`/`evict` beyond what the cost analysis already shows.
+- If `capacity = 0` were allowed, `evict` would remove the just-inserted node. The `assert!` in
+  `new` (line 91) prevents that, and the proof depends on it.
+- "Last-use" is a proof device with no stored representation. The proof argues from the
+  structure of the code (touched node goes to the front), not from any runtime timestamps.
