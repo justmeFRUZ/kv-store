@@ -1,6 +1,6 @@
 # kv-store — plan
 
-Status: skeleton only. `Store` type exists; nothing functional.
+Status: `Store` (chaining hash table, resize on load factor) and `LruCache` (index-based arena, capacity-asserted) both implemented with tests passing; Week 12 proofs (a) and (b) in NOTES.md, cleanup and README remaining.
 
 What this repo will become (Stage 2):
 - In-memory hash table built from scratch — chaining for collisions, resize on load-factor threshold.
