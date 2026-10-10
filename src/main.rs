@@ -197,6 +197,7 @@ fn main() {
     bench_set();
     bench_get();
     bench_delete();
+    bench_vs_hashmap();
     let mut lru = LruCache::new(2);
     lru.put("a", "1");
     lru.put("b", "2");
@@ -282,6 +283,39 @@ fn bench_delete() {
             store.buckets.len(),
             elapsed,
             sink,
+        );
+    }
+}
+
+fn bench_vs_hashmap() {
+    for n in [100usize, 1_000, 10_000, 100_000] {
+        let mut store = Store {
+            buckets: vec![Vec::new(); 16],
+            len: 0,
+        };
+        let start = std::time::Instant::now();
+        for i in 0..n {
+            let key = format!("key{}", i);
+            store.set(&key, "v");
+        }
+        let store_elapsed = start.elapsed();
+
+        let mut map: HashMap<String, String> = HashMap::new();
+        let start = std::time::Instant::now();
+        for i in 0..n {
+            let key = format!("key{}", i);
+            map.insert(key, "v".to_string());
+        }
+        let map_elapsed = start.elapsed();
+
+        println!(
+            "set-vs-hashmap n={} store_len={} map_len={} store={:?} hashmap={:?} ratio={:.2}",
+            n,
+            store.len,
+            map.len(),
+            store_elapsed,
+            map_elapsed,
+            store_elapsed.as_secs_f64() / map_elapsed.as_secs_f64(),
         );
     }
 }
