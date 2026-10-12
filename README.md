@@ -1,5 +1,7 @@
 # kv-store
 
+[![CI](https://github.com/justmeFRUZ/kv-store/actions/workflows/ci.yml/badge.svg)](https://github.com/justmeFRUZ/kv-store/actions/workflows/ci.yml)
+
 A from-scratch key-value store built as a learning project: an in-memory hash
 table with chaining and load-factor resizing, plus an LRU cache on top.
 
