@@ -275,3 +275,36 @@ boundary.
   `new` (line 91) prevents that, and the proof depends on it.
 - "Last-use" is a proof device with no stored representation. The proof argues from the
   structure of the code (touched node goes to the front), not from any runtime timestamps.
+
+## Proof check — outside review, 2026-10-12
+
+Sent both proof sections (hash-table amortized cost, LRU correctness) and the
+relevant src/lib.rs regions to a cold AI session with the specific question:
+do the proofs hold, and if not, where do they break. Asked for holes, not a
+rewrite. Deliberately not a public forum post.
+
+Verdict: both proofs hold. No step found that breaks. Five patches flagged,
+none requiring a rewrite:
+
+1. Hash-table proof uses "len = 0.75*B" without stating the lemma
+   (len <= 0.75*B at every operation boundary). Easy induction; should be
+   written down.
+2. Cost model treats per-entry work as unit cost, but hashing is O(|key|)
+   and grow re-hashes every key. Claim should be bounded by total key bytes,
+   not len.
+3. Wording of the c = 2*kappa sanity check: it shows this Phi fails to prove
+   the bound at c = 2*kappa, not that the amortized bound fails in general.
+4. LRU proof: move_to_front's head case is reachable (get on MRU key) but
+   unargued. Also "put, not full" text sits in the full case, where its
+   empty-list clause is vacuous.
+5. LRU invariant is missing two clauses: every list node is live, and free
+   has no duplicates and in-bounds indices. Both are used silently in evict
+   and alloc.
+
+Separately flagged: three tests construct Store with vec![Vec::new(); 1] to
+force collisions, but set grows immediately (1/1 > 0.75, then 2/2 > 0.75),
+so by the time two keys exist B = 4 and they share a bucket only by hash
+accident mod 4. Those tests pass but not for the reason their names claim.
+Reviewer said four such tests; grep shows three (lines 221, 233, 266).
+
+Fixes are not applied yet — flagged for a later slot, not Weekday 1.
