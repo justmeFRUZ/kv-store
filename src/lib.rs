@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-fn fnv1a(bytes: &[u8]) -> u64 {
+pub fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in bytes {
         hash ^= b as u64;
@@ -8,17 +8,36 @@ fn fnv1a(bytes: &[u8]) -> u64 {
     }
     hash
 }
-struct Store {
+pub struct Store {
     buckets: Vec<Vec<(String, String)>>,
     len: usize,
 }
 
 impl Store {
+    pub fn new() -> Self {
+        Self {
+            buckets: vec![Vec::new(); 16],
+            len: 0,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub fn bucket_count(&self) -> usize {
+        self.buckets.len()
+    }
+
     fn bucket_index(&self, key: &str) -> usize {
         (fnv1a(key.as_bytes()) % self.buckets.len() as u64) as usize
     }
 
-    fn set(&mut self, key: &str, value: &str) {
+    pub fn set(&mut self, key: &str, value: &str) {
         let idx = self.bucket_index(key);
         let bucket = &mut self.buckets[idx];
         for entry in bucket.iter_mut() {
@@ -34,7 +53,7 @@ impl Store {
         }
     }
 
-    fn get(&self, key: &str) -> Option<&str> {
+    pub fn get(&self, key: &str) -> Option<&str> {
         let idx = self.bucket_index(key);
         let bucket = &self.buckets[idx];
         for entry in bucket.iter() {
@@ -45,7 +64,7 @@ impl Store {
         None
     }
 
-    fn delete(&mut self, key: &str) -> Option<String> {
+    pub fn delete(&mut self, key: &str) -> Option<String> {
         let idx = self.bucket_index(key);
         let bucket = &mut self.buckets[idx];
         let pos = bucket.iter().position(|entry| entry.0 == key)?;
@@ -54,7 +73,7 @@ impl Store {
         Some(value)
     }
 
-    fn load_factor(&self) -> f64 {
+    pub fn load_factor(&self) -> f64 {
         self.len as f64 / self.buckets.len() as f64
     }
 
@@ -70,6 +89,12 @@ impl Store {
     }
 }
 
+impl Default for Store {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 struct LruNode {
     key: String,
     value: String,
@@ -77,7 +102,7 @@ struct LruNode {
     next: Option<usize>,
 }
 
-struct LruCache {
+pub struct LruCache {
     nodes: Vec<LruNode>,
     free: Vec<usize>,
     map: HashMap<String, usize>,
@@ -87,7 +112,7 @@ struct LruCache {
 }
 
 impl LruCache {
-    fn new(capacity: usize) -> Self {
+    pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "LruCache capacity must be > 0");
         LruCache {
             nodes: Vec::new(),
@@ -146,13 +171,13 @@ impl LruCache {
         }
     }
 
-    fn get(&mut self, key: &str) -> Option<&str> {
+    pub fn get(&mut self, key: &str) -> Option<&str> {
         let idx = *self.map.get(key)?;
         self.move_to_front(idx);
         Some(&self.nodes[idx].value)
     }
 
-    fn put(&mut self, key: &str, value: &str) {
+    pub fn put(&mut self, key: &str, value: &str) {
         if let Some(&idx) = self.map.get(key) {
             self.nodes[idx].value = value.to_string();
             self.move_to_front(idx);
@@ -173,150 +198,6 @@ impl LruCache {
             self.map.remove(&key);
             self.free.push(t);
         }
-    }
-}
-
-fn main() {
-    let mut store = Store {
-        buckets: vec![Vec::new(); 16],
-        len: 0,
-    };
-    println!("buckets count: {}", store.buckets.len());
-    println!("fnv1a(\"hello\") = {}", fnv1a(b"hello"));
-
-    store.set("name", "Alice");
-    store.set("name", "Bob");
-    println!("get name = {:?}", store.get("name"));
-    println!("get missing = {:?}", store.get("missing"));
-    println!("get hello = {:?}", store.get("hello"));
-    println!("load factor = {}", store.load_factor());
-
-    println!("delete name = {:?}", store.delete("name"));
-    println!("get name after delete = {:?}", store.get("name"));
-    println!("delete missing = {:?}", store.delete("missing"));
-    bench_set();
-    bench_get();
-    bench_delete();
-    bench_vs_hashmap();
-    let mut lru = LruCache::new(2);
-    lru.put("a", "1");
-    lru.put("b", "2");
-    let _ = lru.get("a");
-    lru.put("c", "3");
-    println!("lru a = {:?}", lru.get("a"));
-    println!("lru b = {:?}", lru.get("b"));
-    println!("lru c = {:?}", lru.get("c"));
-}
-
-fn bench_set() {
-    for n in [100usize, 1_000, 10_000, 100_000] {
-        let mut store = Store {
-            buckets: vec![Vec::new(); 16],
-            len: 0,
-        };
-        let start = std::time::Instant::now();
-        for i in 0..n {
-            let key = format!("key{}", i);
-            store.set(&key, "v");
-        }
-        let elapsed = start.elapsed();
-        println!(
-            "set n={} buckets={} elapsed={:?}",
-            n,
-            store.buckets.len(),
-            elapsed
-        );
-    }
-}
-
-fn bench_get() {
-    for n in [100usize, 1_000, 10_000, 100_000] {
-        let mut store = Store {
-            buckets: vec![Vec::new(); 16],
-            len: 0,
-        };
-        let keys: Vec<String> = (0..n).map(|i| format!("key{}", i)).collect();
-        for key in &keys {
-            store.set(key, "v");
-        }
-        let mut sink: usize = 0;
-        let start = std::time::Instant::now();
-        for key in &keys {
-            if let Some(value) = store.get(key) {
-                sink += value.len();
-            }
-        }
-        let elapsed = start.elapsed();
-        let sink = std::hint::black_box(sink);
-        println!(
-            "get n={} buckets={} elapsed={:?} sink={}",
-            n,
-            store.buckets.len(),
-            elapsed,
-            sink,
-        );
-    }
-}
-
-fn bench_delete() {
-    for n in [100usize, 1_000, 10_000, 100_000] {
-        let mut store = Store {
-            buckets: vec![Vec::new(); 16],
-            len: 0,
-        };
-        let keys: Vec<String> = (0..n).map(|i| format!("key{}", i)).collect();
-        for key in &keys {
-            store.set(key, "v");
-        }
-        let mut sink: usize = 0;
-        let start = std::time::Instant::now();
-        for key in &keys {
-            if let Some(value) = store.delete(key) {
-                sink += value.len();
-            }
-        }
-        let elapsed = start.elapsed();
-        let sink = std::hint::black_box(sink);
-        println!(
-            "delete n={} buckets={} elapsed={:?} sink={}",
-            n,
-            store.buckets.len(),
-            elapsed,
-            sink,
-        );
-    }
-}
-
-fn bench_vs_hashmap() {
-    for n in [100usize, 1_000, 10_000, 100_000] {
-        let mut store = Store {
-            buckets: vec![Vec::new(); 16],
-            len: 0,
-        };
-        let start = std::time::Instant::now();
-        for i in 0..n {
-            let key = format!("key{}", i);
-            store.set(&key, "v");
-        }
-        let store_elapsed = start.elapsed();
-
-        let mut map: HashMap<String, String> = HashMap::new();
-        let start = std::time::Instant::now();
-        for i in 0..n {
-            let key = format!("key{}", i);
-            map.insert(key, "v".to_string());
-        }
-        let map_elapsed = start.elapsed();
-
-        println!(
-            "set-vs-hashmap n={} store_len={} map_len={} store={:?} hashmap={:?} ratio={:.2}",
-            n,
-            store.len,
-            map.len(),
-            store_elapsed,
-            map_elapsed,
-            store_elapsed.as_secs_f64() / map_elapsed.as_secs_f64(),
-        );
     }
 }
 
