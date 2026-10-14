@@ -19,9 +19,10 @@ profile bench pass with repeats is deferred.
     cargo run
     cargo test
 
-Binary crate, no dependencies (`Cargo.toml`, edition 2024). `cargo run` prints
+Lib + binary crate, no dependencies (`Cargo.toml`, edition 2024). `cargo run` prints
 benchmark output for `Store::set`/`get`/`delete` at four table sizes, then a
-small LRU demo. There is no `lib.rs` — everything lives in `src/main.rs`.
+small LRU demo. Types, impls and tests live in `src/lib.rs`; `src/main.rs` is
+a thin binary.
 
 ## Design
 
