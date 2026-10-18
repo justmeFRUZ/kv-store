@@ -283,4 +283,31 @@ mod tests {
         }
         assert_eq!(sl.len(), oracle.len(), "len mismatch, seed={}", seed);
     }
+
+    #[test]
+    fn skiplist_iter_returns_keys_in_sorted_order() {
+        let mut sl = SkipList::new(1);
+        for k in ["m", "a", "z", "c"] {
+            sl.insert(k, "x");
+        }
+        let got: Vec<&str> = sl.iter().map(|(k, _)| k).collect();
+        assert_eq!(got, vec!["a", "c", "m", "z"]);
+    }
+
+    #[test]
+    fn skiplist_iter_matches_btreemap_on_random_ops() {
+        use std::collections::BTreeMap;
+        let seed = 4242;
+        let mut rng = Rng::new(seed);
+        let mut sl = SkipList::new(seed);
+        let mut bt = BTreeMap::new();
+        for _ in 0..10_000 {
+            let key = format!("key{:03}", rng.next_u64() % 100);
+            sl.insert(&key, "x");
+            bt.insert(key, String::from("x"));
+        }
+        let sl_keys: Vec<&str> = sl.iter().map(|(k, _)| k).collect();
+        let bt_keys: Vec<&str> = bt.keys().map(|k| k.as_str()).collect();
+        assert_eq!(sl_keys, bt_keys, "seed {seed}");
+    }
 }
