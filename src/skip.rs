@@ -71,6 +71,13 @@ impl SkipList {
         self.len == 0
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
+        SkipListIter {
+            list: self,
+            cur: self.nodes[self.head].next[0],
+        }
+    }
+
     fn search(&self, key: &str) -> Option<usize> {
         let mut x = self.head;
         for i in (0..self.level).rev() {
@@ -131,6 +138,22 @@ impl SkipList {
             self.nodes[prev].next[i] = Some(new_idx);
         }
         self.len += 1;
+    }
+}
+
+pub struct SkipListIter<'a> {
+    list: &'a SkipList,
+    cur: Option<usize>,
+}
+
+impl<'a> Iterator for SkipListIter<'a> {
+    type Item = (&'a str, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.cur?;
+        let next = self.list.nodes[i].next[0];
+        self.cur = next;
+        Some((&self.list.nodes[i].key, &self.list.nodes[i].value))
     }
 }
 
