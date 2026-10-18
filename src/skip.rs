@@ -232,4 +232,32 @@ mod tests {
         assert_eq!(sl.len(), 3);
         assert!(!sl.is_empty());
     }
+
+    #[test]
+    fn skiplist_matches_btreemap_on_random_ops() {
+        use std::collections::BTreeMap;
+
+        let seed: u64 = 99;
+        let mut rng = Rng::new(seed);
+        let mut sl = SkipList::new(seed);
+        let mut oracle: BTreeMap<String, String> = BTreeMap::new();
+
+        for step in 0..10_00u64 {
+            let key = format!("key{}", rng.next_u64() % 100);
+            if rng.next_u64().is_multiple_of(2) {
+                let value = format!("value{}", step);
+                sl.insert(&key, &value);
+                oracle.insert(key, value);
+            } else {
+                let got = sl.get(&key).map(|s| s.to_string());
+                let want = oracle.get(&key).cloned();
+                assert_eq!(
+                    got, want,
+                    "seed={} step={} key={}: skiplist vs BTreeMap",
+                    seed, step, key
+                );
+            }
+        }
+        assert_eq!(sl.len(), oracle.len(), "len mismatch, seed={}", seed);
+    }
 }
