@@ -79,6 +79,10 @@ Caveats: debug profile (release would be several× faster; debug chosen to match
 
 Representation: **index-based, not pointer-based.** Nodes live in a `Vec<Node>`, where `Node { key, value, prev: Option<usize>, next: Option<usize> }`. "Pointers" are indices into that Vec. Map is `HashMap<String, usize>` — key → node index.
 
+Deviation from plan: src/skip.rs uses next: Vec<Option<usize>> with None as NIL; the plan says Vec<usize>. Reason: usize has no spare sentinel, so any "magic index" NIL (nodes.len(), usize::MAX) makes an out-of-bounds index silently mean "end of lane" — a bug the compiler can't catch. Option<usize> makes "no next node" unrepresentable as a valid index. This matches the LRU's existing prev/next: Option<usize> choice, so it is consistency, not a new convention. Cost: one word per level per node. Reversible in Week 16 if Store integration shows a reason.
+
+
+
 Why not `Rc<RefCell<Node>>`: **the plan warns that linked-list-in-Rust with mutable shared references is a known pain point, and explicitly blesses a Vec-based or index-based sidestep. The index approach has no borrow-checker fight, no `Rc`/`Weak` cycle-leak risk, and the same O(1) get/put/evict as the pointer version.**
 
 
