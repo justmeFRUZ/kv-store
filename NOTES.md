@@ -79,10 +79,6 @@ Caveats: debug profile (release would be several× faster; debug chosen to match
 
 Representation: **index-based, not pointer-based.** Nodes live in a `Vec<Node>`, where `Node { key, value, prev: Option<usize>, next: Option<usize> }`. "Pointers" are indices into that Vec. Map is `HashMap<String, usize>` — key → node index.
 
-Deviation from plan: src/skip.rs uses next: Vec<Option<usize>> with None as NIL; the plan says Vec<usize>. Reason: usize has no spare sentinel, so any "magic index" NIL (nodes.len(), usize::MAX) makes an out-of-bounds index silently mean "end of lane" — a bug the compiler can't catch. Option<usize> makes "no next node" unrepresentable as a valid index. This matches the LRU's existing prev/next: Option<usize> choice, so it is consistency, not a new convention. Cost: one word per level per node. Reversible in Week 16 if Store integration shows a reason.
-
-
-
 Why not `Rc<RefCell<Node>>`: **the plan warns that linked-list-in-Rust with mutable shared references is a known pain point, and explicitly blesses a Vec-based or index-based sidestep. The index approach has no borrow-checker fight, no `Rc`/`Weak` cycle-leak risk, and the same O(1) get/put/evict as the pointer version.**
 
 
@@ -312,3 +308,11 @@ accident mod 4. Those tests pass but not for the reason their names claim.
 Reviewer said four such tests; grep shows three (lines 221, 233, 266).
 
 Fixes are not applied yet — flagged for a later slot, not Weekday 1.
+
+## Skip list — Week 14
+
+Deviation from plan: src/skip.rs uses next: Vec<Option<usize>> with None as NIL; the plan says Vec<usize>. Reason: usize has no spare sentinel, so any "magic index" NIL (nodes.len(), usize::MAX) makes an out-of-bounds index silently mean "end of lane" — a bug the compiler can't catch. Option<usize> makes "no next node" unrepresentable as a valid index. This matches the LRU's existing prev/next: Option<usize> choice, so it is consistency, not a new convention. Cost: one word per level per node. Reversible in Week 16 if Store integration shows a reason.
+
+E0499 in splice: two mutable borrows of self.nodes in one statement. Fix: copy next_of_prev into a local first. The compiler was right — the one-liner aliased the node being read and the node being written.
+E0499 in next(): same shape, same fix. `self.cur = self.list.nodes[i].next[0]` reads and writes through self in one expression; extracted to `let next = ...` first.
+Weekday 2 debug half: no oracle failures. Both randomized tests passed on first run (seeds 99, 4242). Not manufactured.
