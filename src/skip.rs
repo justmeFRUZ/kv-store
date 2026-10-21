@@ -232,6 +232,19 @@ mod tests {
     }
 
     #[test]
+    fn skiplist_one_element_gets_and_iterates() {
+        let mut sl = SkipList::new(1);
+        sl.insert("only", "one");
+        assert_eq!(sl.len(), 1);
+        assert!(!sl.is_empty());
+        assert_eq!(sl.get("only"), Some("one"));
+        assert_eq!(sl.get("absent"), None);
+        let mut it = sl.iter();
+        assert_eq!(it.next(), Some(("only", "one")));
+        assert_eq!(it.next(), None);
+    }
+
+    #[test]
     fn skiplist_insert_then_get_returns_value() {
         let mut sl = SkipList::new(1);
         sl.insert("name", "Alice");
