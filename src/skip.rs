@@ -223,6 +223,15 @@ mod tests {
     }
 
     #[test]
+    fn skiplist_empty_returns_none_and_is_empty() {
+        let sl = SkipList::new(1);
+        assert!(sl.is_empty());
+        assert_eq!(sl.len(), 0);
+        assert_eq!(sl.get("anything"), None);
+        assert!(sl.iter().next().is_none());
+    }
+
+    #[test]
     fn skiplist_insert_then_get_returns_value() {
         let mut sl = SkipList::new(1);
         sl.insert("name", "Alice");
