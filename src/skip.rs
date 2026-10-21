@@ -245,6 +245,23 @@ mod tests {
     }
 
     #[test]
+    fn skiplist_insert_at_max_level_keeps_state_consistent() {
+        // White-box: force level to MAX_LEVEL so insert's growth branch cannot
+        // fire (lvl > self.level is impossible when self.level == MAX_LEVEL).
+        // Proves the boundary state stays consistent; not that the fixup runs.
+        let mut sl = SkipList::new(1);
+        sl.level = MAX_LEVEL;
+        for k in ["a", "b", "c"] {
+            sl.insert(k, "x");
+        }
+        assert_eq!(sl.len(), 3);
+        assert_eq!(sl.level, MAX_LEVEL);
+        assert_eq!(sl.get("b"), Some("x"));
+        let got: Vec<&str> = sl.iter().map(|(k, _)| k).collect();
+        assert_eq!(got, vec!["a", "b", "c"]);
+    }
+
+    #[test]
     fn skiplist_insert_then_get_returns_value() {
         let mut sl = SkipList::new(1);
         sl.insert("name", "Alice");
