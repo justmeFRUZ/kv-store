@@ -272,7 +272,8 @@ mod tests {
     fn skiplist_get_missing_return_none() {
         let mut sl = SkipList::new(1);
         sl.insert("name", "Alice");
-        assert_eq!(sl.get("name"), Some("Alice"));
+        assert_eq!(sl.get("aaa"), None);
+        assert_eq!(sl.get("zzz"), None);
     }
 
     #[test]
