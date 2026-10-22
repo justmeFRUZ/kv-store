@@ -19,3 +19,5 @@
 - Posting scan done: 10 rows in bridge/postings.md. Rows 1-2 real, 3-10 estimated — flagged in the file.
 - Postgres 18.6 installed, kvlab database created and confirmed with winpty psql -lqt.
 - Next: Week 14 bridge slot — SQL basics on a toy tasks table.
+
+- Next: Week 15 bridge slot — schema design on paper first (tasks, tags, task_tags; PK, FK, NOT NULL, UNIQUE).
