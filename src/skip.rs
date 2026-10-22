@@ -139,6 +139,34 @@ impl SkipList {
         }
         self.len += 1;
     }
+
+    pub fn remove(&mut self, key: &str) -> Option<String> {
+        let mut update = [self.head; MAX_LEVEL];
+        let mut x = self.head;
+        for i in (0..self.level).rev() {
+            loop {
+                match self.nodes[x].next[i] {
+                    Some(n) if self.nodes[n].key.as_str() < key => x = n,
+                    _ => break,
+                }
+            }
+            update[i] = x;
+        }
+        let target = match self.nodes[x].next[0] {
+            Some(n) if self.nodes[n].key == key => n,
+            _ => return None,
+        };
+
+        let value = self.nodes[target].value.clone();
+        for (i, &prev) in update.iter().enumerate().take(self.level) {
+            if self.nodes[prev].next[i] == Some(target) {
+                let next_of_target = self.nodes[target].next[i];
+                self.nodes[prev].next[i] = next_of_target;
+            }
+        }
+        self.len -= 1;
+        Some(value)
+    }
 }
 
 pub struct SkipListIter<'a> {
@@ -349,5 +377,34 @@ mod tests {
         let sl_keys: Vec<&str> = sl.iter().map(|(k, _)| k).collect();
         let bt_keys: Vec<&str> = bt.keys().map(|k| k.as_str()).collect();
         assert_eq!(sl_keys, bt_keys, "seed {seed}");
+    }
+
+    #[test]
+    fn skiplist_remove_absent_returns_none() {
+        let mut sl = SkipList::new(99);
+        sl.insert("a", "1");
+        assert_eq!(sl.remove("zzz"), None);
+        assert_eq!(sl.len(), 1);
+        assert_eq!(sl.get("a"), Some("1"));
+    }
+
+    #[test]
+    fn skiplist_remove_only_element_leaves_empty() {
+        let mut sl = SkipList::new(99);
+        sl.insert("a", "1");
+        assert_eq!(sl.remove("a"), Some(String::from("1")));
+        assert!(sl.is_empty());
+        assert_eq!(sl.get("a"), None);
+        assert_eq!(sl.iter().count(), 0);
+    }
+
+    #[test]
+    fn skiplist_remove_then_reinsert_works() {
+        let mut sl = SkipList::new(99);
+        sl.insert("a", "1");
+        assert_eq!(sl.remove("a"), Some(String::from("1")));
+        sl.insert("a", "2");
+        assert_eq!(sl.get("a"), Some("2"));
+        assert_eq!(sl.len(), 1);
     }
 }
