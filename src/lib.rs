@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+pub mod skip;
+
 pub fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in bytes {

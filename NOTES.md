@@ -308,3 +308,15 @@ accident mod 4. Those tests pass but not for the reason their names claim.
 Reviewer said four such tests; grep shows three (lines 221, 233, 266).
 
 Fixes are not applied yet — flagged for a later slot, not Weekday 1.
+
+## Skip list — Week 14
+
+Deviation from plan: src/skip.rs uses next: Vec<Option<usize>> with None as NIL; the plan says Vec<usize>. Reason: usize has no spare sentinel, so any "magic index" NIL (nodes.len(), usize::MAX) makes an out-of-bounds index silently mean "end of lane" — a bug the compiler can't catch. Option<usize> makes "no next node" unrepresentable as a valid index. This matches the LRU's existing prev/next: Option<usize> choice, so it is consistency, not a new convention. Cost: one word per level per node. Reversible in Week 16 if Store integration shows a reason.
+
+E0499 in splice: two mutable borrows of self.nodes in one statement. Fix: copy next_of_prev into a local first. The compiler was right — the one-liner aliased the node being read and the node being written.
+E0499 in next(): same shape, same fix. `self.cur = self.list.nodes[i].next[0]` reads and writes through self in one expression; extracted to `let next = ...` first.
+Weekday 2 debug half: no oracle failures. Both randomized tests passed on first run (seeds 99, 4242). Not manufactured.
+
+## Merge vs rebase — Week 14 buffer
+
+Merging created a new commit, `37bbc3f`, with two parents, so the graph showed a fork (`|\`) rejoining and neither original commit was modified. Rebasing instead replayed the `feature-b` commit on top of `feature-a` as a brand-new commit, `f10b10c`, which gave a straight line with no join commit and left `feature-a` untouched as an ancestor of `feature-b`. The cost is that the old `feature-b` commit was orphaned, which is what "rebase rewrites history" means: this is safe on your own unshared branch but disruptive if others have already built on those commits. Both approaches needed the same manual conflict resolution, except that during the rebase the conflict markers swap sides, because `HEAD` is the branch being rebased onto rather than your own.
