@@ -316,3 +316,7 @@ Deviation from plan: src/skip.rs uses next: Vec<Option<usize>> with None as NIL;
 E0499 in splice: two mutable borrows of self.nodes in one statement. Fix: copy next_of_prev into a local first. The compiler was right — the one-liner aliased the node being read and the node being written.
 E0499 in next(): same shape, same fix. `self.cur = self.list.nodes[i].next[0]` reads and writes through self in one expression; extracted to `let next = ...` first.
 Weekday 2 debug half: no oracle failures. Both randomized tests passed on first run (seeds 99, 4242). Not manufactured.
+
+## Merge vs rebase — Week 14 buffer
+
+Merging created a new commit, `37bbc3f`, with two parents, so the graph showed a fork (`|\`) rejoining and neither original commit was modified. Rebasing instead replayed the `feature-b` commit on top of `feature-a` as a brand-new commit, `f10b10c`, which gave a straight line with no join commit and left `feature-a` untouched as an ancestor of `feature-b`. The cost is that the old `feature-b` commit was orphaned, which is what "rebase rewrites history" means: this is safe on your own unshared branch but disruptive if others have already built on those commits. Both approaches needed the same manual conflict resolution, except that during the rebase the conflict markers swap sides, because `HEAD` is the branch being rebased onto rather than your own.
