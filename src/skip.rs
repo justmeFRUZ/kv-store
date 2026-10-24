@@ -188,6 +188,46 @@ impl SkipList {
         self.len -= 1;
         Some(value)
     }
+
+    #[cfg(test)]
+    fn check_invariants(&self) {
+        for i in 0..MAX_LEVEL {
+            let mut cur = self.nodes[self.head].next[i];
+            let mut prev: Option<&str> = None;
+            while let Some(n) = cur {
+                let k = self.nodes[n].key.as_str();
+                if let Some(p) = prev {
+                    assert!(p < k, "level {i} unsorted: {p:?} >= {k:?}");
+                }
+                prev = Some(k);
+                cur = self.nodes[n].next[i];
+            }
+        }
+
+        for i in 0..MAX_LEVEL - 1 {
+            let hi = i + 1;
+            let mut at_i = vec![false; self.nodes.len()];
+            let mut cur = self.nodes[self.head].next[i];
+            while let Some(n) = cur {
+                at_i[n] = true;
+                cur = self.nodes[n].next[i];
+            }
+            let mut cur = self.nodes[self.head].next[hi];
+            while let Some(n) = cur {
+                assert!(at_i[n], "node {n} at level {hi} missing at level {i}");
+                cur = self.nodes[n].next[hi];
+            }
+        }
+
+        // 3. the number of nodes reachable at level 0 matches len
+        let mut count = 0usize;
+        let mut cur = self.nodes[self.head].next[0];
+        while let Some(n) = cur {
+            count += 1;
+            cur = self.nodes[n].next[0];
+        }
+        assert_eq!(count, self.len, "level-0 node count != len");
+    }
 }
 
 pub struct SkipListIter<'a> {
@@ -389,6 +429,7 @@ mod tests {
                     seed, step, key
                 );
             }
+            sl.check_invariants();
         }
         assert_eq!(sl.len(), oracle.len(), "len mismatch, seed={}", seed);
     }
