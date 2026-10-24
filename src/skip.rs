@@ -99,6 +99,27 @@ impl SkipList {
         self.search(key).map(|i| self.nodes[i].value.as_str())
     }
 
+    fn lower_bound(&self, key: &str) -> Option<usize> {
+        let mut x = self.head;
+        for i in (0..self.level).rev() {
+            loop {
+                match self.nodes[x].next[i] {
+                    Some(n) if self.nodes[n].key.as_str() < key => x = n,
+                    _ => break,
+                }
+            }
+        }
+        self.nodes[x].next[0]
+    }
+
+    pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> + '_ {
+        SkipListRangeIter {
+            list: self,
+            cur: self.lower_bound(start),
+            end: end.to_string(),
+        }
+    }
+
     pub fn insert(&mut self, key: &str, value: &str) {
         let mut update = [self.head; MAX_LEVEL];
         let mut x = self.head;
@@ -179,6 +200,26 @@ impl<'a> Iterator for SkipListIter<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         let i = self.cur?;
+        let next = self.list.nodes[i].next[0];
+        self.cur = next;
+        Some((&self.list.nodes[i].key, &self.list.nodes[i].value))
+    }
+}
+
+pub struct SkipListRangeIter<'a> {
+    list: &'a SkipList,
+    cur: Option<usize>,
+    end: String,
+}
+
+impl<'a> Iterator for SkipListRangeIter<'a> {
+    type Item = (&'a str, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.cur?;
+        if self.list.nodes[i].key.as_str() >= self.end.as_str() {
+            return None;
+        }
         let next = self.list.nodes[i].next[0];
         self.cur = next;
         Some((&self.list.nodes[i].key, &self.list.nodes[i].value))
@@ -406,5 +447,89 @@ mod tests {
         sl.insert("a", "2");
         assert_eq!(sl.get("a"), Some("2"));
         assert_eq!(sl.len(), 1);
+    }
+
+    #[test]
+    fn skiplist_range_is_half_open() {
+        let mut sl = SkipList::new(99);
+        sl.insert("a", "1");
+        sl.insert("b", "2");
+        sl.insert("c", "3");
+        sl.insert("d", "4");
+        let got: Vec<(&str, &str)> = sl.range("b", "d").collect();
+        assert_eq!(got, vec![("b", "2"), ("c", "3")]);
+    }
+
+    #[test]
+    fn skiplist_range_start_ge_end_is_empty() {
+        let mut sl = SkipList::new(99);
+        sl.insert("a", "1");
+        sl.insert("b", "2");
+        assert_eq!(sl.range("b", "a").count(), 0);
+        assert_eq!(sl.range("a", "a").count(), 0);
+    }
+
+    #[test]
+    fn skiplist_range_on_empty_is_empty() {
+        let sl = SkipList::new(99);
+        assert_eq!(sl.range("a", "z").count(), 0);
+    }
+
+    #[test]
+    fn skiplist_range_matches_btreemap_on_random_ops() {
+        use std::collections::BTreeMap;
+
+        let seed: u64 = 4242;
+        let mut rng = Rng::new(seed);
+        let mut sl = SkipList::new(seed);
+        let mut oracle: BTreeMap<String, String> = BTreeMap::new();
+
+        for step in 0..10_000u64 {
+            let key = format!("key{}", rng.next_u64() % 100);
+            match rng.next_u64() % 3 {
+                0 => {
+                    let value = format!("value{}", step);
+                    sl.insert(&key, &value);
+                    oracle.insert(key, value);
+                }
+                1 => {
+                    let got = sl.remove(&key);
+                    let want = oracle.remove(&key);
+                    assert_eq!(got, want, "seed={} step={} remove key={}", seed, step, key);
+                }
+                _ => {
+                    let start = format!("key{}", rng.next_u64() % 100);
+                    let end = format!("key{}", rng.next_u64() % 100);
+                    let got: Vec<(&str, &str)> = sl.range(&start, &end).collect();
+                    if start >= end {
+                        assert!(
+                            got.is_empty(),
+                            "seed={} step={} start={} end={}",
+                            seed,
+                            step,
+                            start,
+                            end
+                        );
+                    } else {
+                        let want: Vec<(&str, &str)> = oracle
+                            .range(start.clone()..end.clone())
+                            .map(|(k, v)| (k.as_str(), v.as_str()))
+                            .collect();
+                        assert_eq!(
+                            got, want,
+                            "seed={} step={} start={} end={}",
+                            seed, step, start, end
+                        )
+                    }
+                }
+            }
+            assert_eq!(
+                sl.len(),
+                oracle.len(),
+                "len mismatch seed={} step={}",
+                seed,
+                step
+            );
+        }
     }
 }
