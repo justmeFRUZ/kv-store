@@ -320,3 +320,7 @@ Weekday 2 debug half: no oracle failures. Both randomized tests passed on first 
 ## Merge vs rebase — Week 14 buffer
 
 Merging created a new commit, `37bbc3f`, with two parents, so the graph showed a fork (`|\`) rejoining and neither original commit was modified. Rebasing instead replayed the `feature-b` commit on top of `feature-a` as a brand-new commit, `f10b10c`, which gave a straight line with no join commit and left `feature-a` untouched as an ancestor of `feature-b`. The cost is that the old `feature-b` commit was orphaned, which is what "rebase rewrites history" means: this is safe on your own unshared branch but disruptive if others have already built on those commits. Both approaches needed the same manual conflict resolution, except that during the rebase the conflict markers swap sides, because `HEAD` is the branch being rebased onto rather than your own.
+
+## Benchmarks — Week 15 (skip list vs BTreeMap)
+
+At every size the skip list loses all three operations to `BTreeMap`, with no crossover: insert ~1.2–1.4x, get ~1.8–2.0x, range ~2.6–3.4x. The ratios stay roughly constant from 1k to 1M, which points at constants and cache behavior rather than asymptotics — both are n log n, but the skip list pointer-chases across cache lines while a B-tree packs many keys per node. Range has the widest gap, consistent with touching every level-0 node once. The 1k numbers sit near the noise floor and should not be quoted precisely.
