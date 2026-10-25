@@ -367,4 +367,111 @@ mod tests {
     fn lru_new_with_zero_capacity_panics() {
         let _ = LruCache::new(0);
     }
+
+    #[test]
+    fn store_matches_reference_model_on_random_ops() {
+        let seed: u64 = 0xBEEF_1234_5678_9ABC;
+        let mut rng = crate::skip::Rng::new(seed);
+        let mut store = Store::new();
+        let mut model: Vec<(String, String)> = Vec::new();
+
+        for step in 0..2000u32 {
+            let roll = rng.next_u64() % 100;
+            let key = format!("k{}", rng.next_u64() % 200);
+            let val = format!("v{}", rng.next_u64() % 1000);
+
+            if roll < 55 {
+                store.set(&key, &val);
+                match model.iter_mut().find(|(k, _)| *k == key) {
+                    Some(entry) => entry.1 = val,
+                    None => model.push((key.clone(), val)),
+                }
+            } else if roll < 80 {
+                let expected = model
+                    .iter()
+                    .find(|(k, _)| *k == key)
+                    .map(|(_, v)| v.clone());
+                assert_eq!(
+                    store.get(&key),
+                    expected.as_deref(),
+                    "get mismatch at step {} key {} (seed {})",
+                    step,
+                    key,
+                    seed
+                );
+            } else {
+                let pos = model.iter().position(|(k, _)| *k == key);
+                let expected = pos.map(|p| model.remove(p).1);
+                assert_eq!(
+                    store.delete(&key),
+                    expected,
+                    "delete mismatch at step {} key {} (seed {})",
+                    step,
+                    key,
+                    seed
+                );
+            }
+
+            assert_eq!(
+                store.len(),
+                model.len(),
+                "len mismatch at step {} (seed {})",
+                step,
+                seed
+            );
+            for (k, v) in &model {
+                assert_eq!(
+                    store.get(k),
+                    Some(v.as_str()),
+                    "content mismatch at step {} key {} (seed {})",
+                    step,
+                    k,
+                    seed
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn lru_matches_reference_model_on_random_ops() {
+        let seed: u64 = 0xDEAD_9876_5432_1FED;
+        let mut rng = crate::skip::Rng::new(seed);
+        let capacity = 8usize;
+        let mut lru = LruCache::new(capacity);
+        // Model: index 0 = most recently used, last index = least recently used.
+        let mut model: Vec<(String, String)> = Vec::new();
+
+        for step in 0..2000u32 {
+            let roll = rng.next_u64() % 100;
+            let key = format!("k{}", rng.next_u64() % 20);
+            let val = format!("v{}", rng.next_u64() % 1000);
+
+            if roll < 55 {
+                lru.put(&key, &val);
+                if let Some(p) = model.iter().position(|(k, _)| *k == key) {
+                    model.remove(p);
+                }
+                model.insert(0, (key, val));
+                if model.len() > capacity {
+                    model.pop();
+                }
+            } else {
+                let pos = model.iter().position(|(k, _)| *k == key);
+                let expected = pos.map(|p| {
+                    let entry = model.remove(p);
+                    let v = entry.1.clone();
+                    model.insert(0, entry);
+                    v
+                });
+                assert_eq!(
+                    lru.get(&key),
+                    expected.as_deref(),
+                    "get mismatch at step {} key {} (seed {})",
+                    step,
+                    key,
+                    seed
+                );
+            }
+        }
+    }
 }
