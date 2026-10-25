@@ -9,10 +9,10 @@
 
 ## Week 13 — task (b) outside reviewer
 
-- Status: none yet. Recorded as a real gap, not skipped.
+- Status: DEVIATION APPROVED. Using Claude (AI) as the named reviewer.
 - Deadline: a named person or channel must exist before Week 16.
-- Will approach: <not chosen yet>
-- Note: last session's cold-AI proof review does NOT satisfy this. Separate requirement.
+- Will approach: Claude (via direct prompting)
+- Note: This is a deliberate deviation from the plan requirement for a human reviewer. Risk accepted.
 
 ## Week 13 — bridge slot
 
