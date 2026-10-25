@@ -13,6 +13,7 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
 pub struct Store {
     buckets: Vec<Vec<(String, String)>>,
     len: usize,
+    index: skip::SkipList,
 }
 
 impl Store {
@@ -20,6 +21,7 @@ impl Store {
         Self {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         }
     }
 
@@ -50,6 +52,7 @@ impl Store {
         }
         bucket.push((key.to_string(), value.to_string()));
         self.len += 1;
+        self.index.insert(key, key);
         if self.load_factor() > 0.75 {
             self.grow();
         }
@@ -72,7 +75,14 @@ impl Store {
         let pos = bucket.iter().position(|entry| entry.0 == key)?;
         let (_, value) = bucket.remove(pos);
         self.len -= 1;
+        let _ = self.index.remove(key);
         Some(value)
+    }
+
+    pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> +'_ {
+        self.index.range(start, end).filter_map(|(key, _)| {
+            self.get(key).map(|value| (key, value))
+        })
     }
 
     pub fn load_factor(&self) -> f64 {
@@ -212,6 +222,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.get("name"), Some("Alice"));
@@ -222,6 +233,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         store.set("city", "Tashkent");
@@ -234,6 +246,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         store.set("name", "Bob");
@@ -247,6 +260,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("missing"), None);
@@ -258,6 +272,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         assert_eq!(store.delete("anything"), None);
     }
@@ -267,6 +282,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("name"), Some("Alice".to_string()));
@@ -279,6 +295,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         for i in 0..20 {
             let key = format!("key{}", i);
