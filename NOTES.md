@@ -324,3 +324,17 @@ Merging created a new commit, `37bbc3f`, with two parents, so the graph showed a
 ## Benchmarks — Week 15 (skip list vs BTreeMap)
 
 At every size the skip list loses all three operations to `BTreeMap`, with no crossover: insert ~1.2–1.4x, get ~1.8–2.0x, range ~2.6–3.4x. The ratios stay roughly constant from 1k to 1M, which points at constants and cache behavior rather than asymptotics — both are n log n, but the skip list pointer-chases across cache lines while a B-tree packs many keys per node. Range has the widest gap, consistent with touching every level-0 node once. The 1k numbers sit near the noise floor and should not be quoted precisely.
+
+## Why a skip list — Week 16 (worst-case trade-off)
+
+Three reasons, in the order they mattered when choosing it over a balanced BST:
+
+1. **It reuses the LRU's index-arena style.** `LruCache` already holds nodes in a `Vec<LruNode>` with `Option<usize>` links and a free list; the skip list's `Vec<Node>` with `next: Vec<Option<usize>>` is the same shape. The alternative — `Rc<RefCell<Node>>` linked nodes — was rejected for the LRU; accepting it here would have been inconsistent.
+
+2. **Range queries fall out of walking level 0.** A range is one search plus a walk along the base list — no separate in-order traversal machinery to build.
+
+3. **No rotation logic to get wrong.** A balanced BST needs rotations and invariants that can be correct in the common case and subtly wrong under load. A skip list has no rebalancing step; correctness reduces to level-sorted and level-i nodes also at i-1, which `check_invariants` already asserts after every randomized op.
+
+What is given up: **O(log n) is expected, not guaranteed.** Heights come from a coin flip; with an unlucky (or adversarial) sequence of flips the structure degenerates toward a linked list and per-op cost degrades toward O(n). A balanced BST's rotations rule that out. That trade — expected vs guaranteed, rotation bugs vs unlucky flips — is the right side for a single-writer learning store whose ranges actually get read. It would not be for an index where worst-case latency is contractual.
+
+The Week 15 numbers above show the skip list *slower* than `BTreeMap` at the same n; this section is why it was chosen anyway. Speed was not the goal; the cost of getting a rotation bug wrong was.
