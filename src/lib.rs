@@ -79,10 +79,10 @@ impl Store {
         Some(value)
     }
 
-    pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> +'_ {
-        self.index.range(start, end).filter_map(|(key, _)| {
-            self.get(key).map(|value| (key, value))
-        })
+    pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.index
+            .range(start, end)
+            .filter_map(|(key, _)| self.get(key).map(|value| (key, value)))
     }
 
     pub fn load_factor(&self) -> f64 {
@@ -215,6 +215,8 @@ impl LruCache {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     #[test]
@@ -390,7 +392,7 @@ mod tests {
         let seed: u64 = 0xBEEF_1234_5678_9ABC;
         let mut rng = crate::skip::Rng::new(seed);
         let mut store = Store::new();
-        let mut model: Vec<(String, String)> = Vec::new();
+        let mut model: BTreeMap<String, String> = BTreeMap::new();
 
         for step in 0..2000u32 {
             let roll = rng.next_u64() % 100;
@@ -399,29 +401,20 @@ mod tests {
 
             if roll < 55 {
                 store.set(&key, &val);
-                match model.iter_mut().find(|(k, _)| *k == key) {
-                    Some(entry) => entry.1 = val,
-                    None => model.push((key.clone(), val)),
-                }
+                model.insert(key.clone(), val);
             } else if roll < 80 {
-                let expected = model
-                    .iter()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.clone());
                 assert_eq!(
                     store.get(&key),
-                    expected.as_deref(),
+                    model.get(&key).map(|v| v.as_str()),
                     "get mismatch at step {} key {} (seed {})",
                     step,
                     key,
                     seed
                 );
             } else {
-                let pos = model.iter().position(|(k, _)| *k == key);
-                let expected = pos.map(|p| model.remove(p).1);
                 assert_eq!(
                     store.delete(&key),
-                    expected,
+                    model.remove(&key),
                     "delete mismatch at step {} key {} (seed {})",
                     step,
                     key,
@@ -436,6 +429,31 @@ mod tests {
                 step,
                 seed
             );
+
+            let from = format!("k{}", rng.next_u64() % 220);
+            let to = format!("k{}", rng.next_u64() % 220);
+            let got: Vec<(&str, &str)> = store.range(&from, &to).collect();
+            if from < to {
+                let want: Vec<(&str, &str)> = model
+                    .range::<String, _>(&from..&to)
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                assert_eq!(
+                    got, want,
+                    "range mismatch at step {} from {} to {} (seed {})",
+                    step, from, to, seed
+                );
+            } else {
+                assert!(
+                    got.is_empty(),
+                    "range from >= to must be empty at step {} from {} to {} (seed {})",
+                    step,
+                    from,
+                    to,
+                    seed
+                );
+            }
+
             for (k, v) in &model {
                 assert_eq!(
                     store.get(k),
