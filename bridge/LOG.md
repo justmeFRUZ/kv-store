@@ -28,3 +28,11 @@
 - kvlab's prior tasks table (id/title/done/created_at, 2 rows) backed up to bridge/kvlab_tasks_backup.csv and dropped before the new schema was applied.
 - Role discrepancy: Week 13's log recorded psql -lqt succeeding as user; today's cluster only has postgres. All schema work done as postgres. Dedicated-role setup deferred to Week 19 Django slot.
 - Next: Week 16 bridge slot — joins and GROUP BY; five queries from English questions.
+
+## Week 16 — bridge slot — joins and GROUP BY
+
+- Five queries in bridge/queries.sql, each answering one English question: tasks-with-tags (7 rows), tasks-per-tag (work 3, study 2, urgent 2), tasks-without-tags (task 6 only), tags-on-more-than-2-tasks (work only), tasks-per-status-and-priority (Done/High 2, Pending/Low 2, Pending/Medium 2). All five matched predictions written before running.
+- Seed: bridge/seed.sql — 6 tasks, 3 tags, 7 links, 16 rows. Explicit ids + ON CONFLICT DO NOTHING (idempotent); two setval calls advance the identity sequences to 6 and 3 so Week 19's id-less Django inserts do not collide.
+- Known gap, not fixed: no tag currently has zero tasks, so Q2's LEFT JOIN "0" branch is structurally correct but unexercised by data.
+- Login note: three scram auth failures this session were input-capture artifacts from read -rs, not a wrong password. The wrapper now prints `captured chars=N` before psql so a silent capture failure is visible in the same output.
+- Next: Week 17 bridge slot — indexes and EXPLAIN ANALYZE (100k rows via generate_series).
