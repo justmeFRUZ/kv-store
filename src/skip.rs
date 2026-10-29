@@ -1,8 +1,11 @@
+/// A deterministic xorshift64 pseudorandom number generator.
 pub struct Rng {
     state: u64,
 }
 
 impl Rng {
+    /// Creates a generator seeded with `seed`. A `seed` of 0 is remapped to a
+    /// fixed non-zero constant so the generator never gets stuck at 0.
     pub fn new(seed: u64) -> Self {
         let state = if seed == 0 {
             0x9E37_79B9_7F4A_7C15
@@ -12,6 +15,7 @@ impl Rng {
         Self { state }
     }
 
+    /// Advances the generator and returns the next 64-bit value.
     pub fn next_u64(&mut self) -> u64 {
         let mut x = self.state;
         x ^= x << 13;
@@ -39,6 +43,11 @@ struct Node {
     next: Vec<Option<usize>>,
 }
 
+/// A probabilistic ordered map backed by a skip list.
+///
+/// Nodes are stored in an arena (`Vec<Node>`) and linked by index. The head
+/// sentinel lives at index 0. Expected `O(log n)` search, insert and remove;
+/// worst case is `O(n)`.
 pub struct SkipList {
     nodes: Vec<Node>,
     head: usize,
@@ -48,6 +57,10 @@ pub struct SkipList {
 }
 
 impl SkipList {
+    /// Creates an empty skip list with the given RNG seed.
+    ///
+    /// The seed is passed through to [`Rng::new`]; two lists built with the
+    /// same seed and the same operation sequence produce identical structure.
     pub fn new(seed: u64) -> Self {
         let head = Node {
             key: String::new(),
@@ -63,14 +76,17 @@ impl SkipList {
         }
     }
 
+    /// Returns the number of entries in the list.
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// Returns `true` if the list contains no entries.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    /// Iterates over entries in ascending key order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &str)> + '_ {
         SkipListIter {
             list: self,
@@ -95,6 +111,7 @@ impl SkipList {
         }
     }
 
+    /// Returns the value associated with `key`, or `None` if absent.
     pub fn get(&self, key: &str) -> Option<&str> {
         self.search(key).map(|i| self.nodes[i].value.as_str())
     }
@@ -112,6 +129,11 @@ impl SkipList {
         self.nodes[x].next[0]
     }
 
+    /// Iterates over entries with `start <= key < end`, in ascending key order.
+    ///
+    /// The interval is half-open: `end` is excluded. If `start >= end`, the
+    /// iterator yields nothing. The bounds are compared lexicographically as
+    /// Rust `&str` (`String` `Ord`).
     pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> + '_ {
         SkipListRangeIter {
             list: self,
@@ -120,6 +142,8 @@ impl SkipList {
         }
     }
 
+    /// Inserts `key` with `value`, or replaces the existing value if `key` is
+    /// already present (in which case `len` is unchanged).
     pub fn insert(&mut self, key: &str, value: &str) {
         let mut update = [self.head; MAX_LEVEL];
         let mut x = self.head;
@@ -161,6 +185,8 @@ impl SkipList {
         self.len += 1;
     }
 
+    /// Removes `key` and returns its previous value, or `None` if `key` is
+    /// absent.
     pub fn remove(&mut self, key: &str) -> Option<String> {
         let mut update = [self.head; MAX_LEVEL];
         let mut x = self.head;
@@ -230,6 +256,9 @@ impl SkipList {
     }
 }
 
+/// Borrowing iterator over a [`SkipList`] in ascending key order.
+///
+/// Created by [`SkipList::iter`].
 pub struct SkipListIter<'a> {
     list: &'a SkipList,
     cur: Option<usize>,
@@ -246,6 +275,9 @@ impl<'a> Iterator for SkipListIter<'a> {
     }
 }
 
+/// Borrowing iterator over a half-open key range of a [`SkipList`].
+///
+/// Created by [`SkipList::range`]; yields entries with `start <= key < end`.
 pub struct SkipListRangeIter<'a> {
     list: &'a SkipList,
     cur: Option<usize>,

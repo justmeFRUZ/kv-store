@@ -324,3 +324,36 @@ Merging created a new commit, `37bbc3f`, with two parents, so the graph showed a
 ## Benchmarks — Week 15 (skip list vs BTreeMap)
 
 At every size the skip list loses all three operations to `BTreeMap`, with no crossover: insert ~1.2–1.4x, get ~1.8–2.0x, range ~2.6–3.4x. The ratios stay roughly constant from 1k to 1M, which points at constants and cache behavior rather than asymptotics — both are n log n, but the skip list pointer-chases across cache lines while a B-tree packs many keys per node. Range has the widest gap, consistent with touching every level-0 node once. The 1k numbers sit near the noise floor and should not be quoted precisely.
+
+## Why a skip list — Week 16 (worst-case trade-off)
+
+Three reasons, in the order they mattered when choosing it over a balanced BST:
+
+1. **It reuses the LRU's index-arena style.** `LruCache` already holds nodes in a `Vec<LruNode>` with `Option<usize>` links and a free list; the skip list's `Vec<Node>` with `next: Vec<Option<usize>>` is the same shape. The alternative — `Rc<RefCell<Node>>` linked nodes — was rejected for the LRU; accepting it here would have been inconsistent.
+
+2. **Range queries fall out of walking level 0.** A range is one search plus a walk along the base list — no separate in-order traversal machinery to build.
+
+3. **No rotation logic to get wrong.** A balanced BST needs rotations and invariants that can be correct in the common case and subtly wrong under load. A skip list has no rebalancing step; correctness reduces to level-sorted and level-i nodes also at i-1, which `check_invariants` already asserts after every randomized op.
+
+What is given up: **O(log n) is expected, not guaranteed.** Heights come from a coin flip; with an unlucky (or adversarial) sequence of flips the structure degenerates toward a linked list and per-op cost degrades toward O(n). A balanced BST's rotations rule that out. That trade — expected vs guaranteed, rotation bugs vs unlucky flips — is the right side for a single-writer learning store whose ranges actually get read. It would not be for an index where worst-case latency is contractual.
+
+The Week 15 numbers above show the skip list *slower* than `BTreeMap` at the same n; this section is why it was chosen anyway. Speed was not the goal; the cost of getting a rotation bug wrong was.
+
+## The 100k-task experiment - rewriting the whole file per add (Week 16 buffer)
+
+Setup: the Stage 1 Rust CLI (`task-manager-rs`), release build. Verified from source that every `add` does `load_tasks` -> `add_task` -> `save_or_exit`: it reads the whole JSON file and rewrites the whole file for one mutation. Three file sizes; 3 timed runs each; `date +%s%N` around one process invocation; Windows, warm page cache; scratch dir `/tmp/big-o-100k`; the repo's own `tasks.json` untouched. Add counts verified after each size (103 / 10003 / 100003 tasks in the file - the saves land).
+
+| tasks in file | file bytes | `add` wall-clock per run (ms) |
+|---|---|---|
+| 100 | 10,584 | 103 / 110 / 113 |
+| 10,000 | 1,097,788 | 107 / 113 / 112 |
+| 100,000 | 11,177,790 | 111 / 127 / 110 |
+
+Load-only run at 100,000 tasks (no save path): 96 / 98 / 96 ms.
+
+What the numbers do and do not show:
+
+- Per-add wall-clock was ~103-127 ms at every size. Differences between sizes are inside run-to-run variance; process startup dominates: an add at 100 tasks (10 KB file) cost about the same as an add at 100,000 tasks (11 MB file). A load-only run at 100k was ~97 ms, but subtracting it from the 100k add time to isolate the save (~19 ms) is not trustworthy - spawn cost shifted between loop contexts.
+- A clean file-size curve needs an in-process timer. Process-level timing on Windows cannot separate spawn from load from save at these magnitudes. Not built; this is the gap.
+- Prediction on record: hundreds of ms at 100k was predicted before running. Output beat prediction.
+- The durable fact for Week 24 is bytes, not milliseconds: every add rewrites the entire file. Bytes rewritten per add: 10,584 -> 1,097,788 -> 11,177,790, linear in task count, O(n) per mutation. Over k adds that is O(k*n) total bytes written, versus O(k) for an append-only log. That argument does not depend on this machine's timings.

@@ -1,7 +1,11 @@
 use std::collections::HashMap;
 
+/// The skip list module: a probabilistic ordered map used as the range index backing [`Store`].
 pub mod skip;
 
+/// Computes the 64-bit FNV-1a hash of `bytes`.
+///
+/// Deterministic: the same input always produces the same output.
 pub fn fnv1a(bytes: &[u8]) -> u64 {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in bytes {
@@ -10,27 +14,41 @@ pub fn fnv1a(bytes: &[u8]) -> u64 {
     }
     hash
 }
+/// An in-memory key-value store with ordered range queries.
+///
+/// Values live in a chained hash table (bucket array, doubling growth), while
+/// keys are mirrored into a skip-list index so [`Store::range`] can walk them in
+/// sorted order. [`Store::set`] and [`Store::delete`] update both indexes; the
+/// invariant is that the two never disagree.
 pub struct Store {
     buckets: Vec<Vec<(String, String)>>,
     len: usize,
+    index: skip::SkipList,
 }
 
 impl Store {
+    /// Creates an empty store with an initial capacity of 16 buckets.
     pub fn new() -> Self {
         Self {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         }
     }
 
+    /// Returns the number of key-value pairs in the store.
     pub fn len(&self) -> usize {
         self.len
     }
 
+    /// Returns `true` if the store holds no entries.
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
+    /// Returns the current number of hash buckets.
+    ///
+    /// Doubles automatically when the load factor exceeds 0.75 on insert.
     pub fn bucket_count(&self) -> usize {
         self.buckets.len()
     }
@@ -39,6 +57,11 @@ impl Store {
         (fnv1a(key.as_bytes()) % self.buckets.len() as u64) as usize
     }
 
+    /// Inserts or replaces the value for `key`.
+    ///
+    /// An insert updates both the hash table and the skip-list index and grows the
+    /// bucket array when the load factor exceeds 0.75. Replacing an existing value
+    /// does not change `len` and does not trigger growth.
     pub fn set(&mut self, key: &str, value: &str) {
         let idx = self.bucket_index(key);
         let bucket = &mut self.buckets[idx];
@@ -50,11 +73,13 @@ impl Store {
         }
         bucket.push((key.to_string(), value.to_string()));
         self.len += 1;
+        self.index.insert(key, key);
         if self.load_factor() > 0.75 {
             self.grow();
         }
     }
 
+    /// Returns the value for `key`, or `None` if the key is absent.
     pub fn get(&self, key: &str) -> Option<&str> {
         let idx = self.bucket_index(key);
         let bucket = &self.buckets[idx];
@@ -66,15 +91,31 @@ impl Store {
         None
     }
 
+    /// Removes `key` and returns its previous value, or `None` if `key` is absent.
+    ///
+    /// Removal updates both the hash table and the skip-list index.
     pub fn delete(&mut self, key: &str) -> Option<String> {
         let idx = self.bucket_index(key);
         let bucket = &mut self.buckets[idx];
         let pos = bucket.iter().position(|entry| entry.0 == key)?;
         let (_, value) = bucket.remove(pos);
         self.len -= 1;
+        let _ = self.index.remove(key);
         Some(value)
     }
 
+    /// Iterates over key-value pairs with `start <= key < end`, in ascending key order.
+    ///
+    /// Key ordering is delegated to the skip-list index (see [`skip::SkipList::range`]);
+    /// each value is then looked up in the hash table. The interval is half-open: if
+    /// `start >= end` the iterator yields nothing.
+    pub fn range(&self, start: &str, end: &str) -> impl Iterator<Item = (&str, &str)> + '_ {
+        self.index
+            .range(start, end)
+            .filter_map(|(key, _)| self.get(key).map(|value| (key, value)))
+    }
+
+    /// Returns `len / bucket_count`; a value above 0.75 triggers a resize on insert.
     pub fn load_factor(&self) -> f64 {
         self.len as f64 / self.buckets.len() as f64
     }
@@ -104,6 +145,11 @@ struct LruNode {
     next: Option<usize>,
 }
 
+/// A capacity-bounded map that evicts the least-recently-used entry.
+///
+/// Nodes live in a `Vec` arena with explicit `prev`/`next` indices, a free list
+/// recycles evicted slots, and a `HashMap` gives O(1) lookup by key. `get` and
+/// `put` promote the touched entry to most-recently-used.
 pub struct LruCache {
     nodes: Vec<LruNode>,
     free: Vec<usize>,
@@ -114,6 +160,11 @@ pub struct LruCache {
 }
 
 impl LruCache {
+    /// Creates an empty cache holding at most `capacity` entries.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `capacity` is 0.
     pub fn new(capacity: usize) -> Self {
         assert!(capacity > 0, "LruCache capacity must be > 0");
         LruCache {
@@ -173,12 +224,19 @@ impl LruCache {
         }
     }
 
+    /// Returns the value for `key`, or `None` if absent.
+    ///
+    /// A hit promotes the entry to most-recently-used.
     pub fn get(&mut self, key: &str) -> Option<&str> {
         let idx = *self.map.get(key)?;
         self.move_to_front(idx);
         Some(&self.nodes[idx].value)
     }
 
+    /// Inserts or updates `key`, promoting it to most-recently-used.
+    ///
+    /// If the cache is over capacity after the insert, the least-recently-used
+    /// entry is evicted.
     pub fn put(&mut self, key: &str, value: &str) {
         if let Some(&idx) = self.map.get(key) {
             self.nodes[idx].value = value.to_string();
@@ -205,6 +263,8 @@ impl LruCache {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     #[test]
@@ -212,6 +272,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.get("name"), Some("Alice"));
@@ -222,6 +283,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         store.set("city", "Tashkent");
@@ -234,6 +296,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         store.set("name", "Bob");
@@ -247,6 +310,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("missing"), None);
@@ -258,6 +322,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         assert_eq!(store.delete("anything"), None);
     }
@@ -267,6 +332,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 1],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         store.set("name", "Alice");
         assert_eq!(store.delete("name"), Some("Alice".to_string()));
@@ -279,6 +345,7 @@ mod tests {
         let mut store = Store {
             buckets: vec![Vec::new(); 16],
             len: 0,
+            index: skip::SkipList::new(4242),
         };
         for i in 0..20 {
             let key = format!("key{}", i);
@@ -373,7 +440,7 @@ mod tests {
         let seed: u64 = 0xBEEF_1234_5678_9ABC;
         let mut rng = crate::skip::Rng::new(seed);
         let mut store = Store::new();
-        let mut model: Vec<(String, String)> = Vec::new();
+        let mut model: BTreeMap<String, String> = BTreeMap::new();
 
         for step in 0..2000u32 {
             let roll = rng.next_u64() % 100;
@@ -382,29 +449,20 @@ mod tests {
 
             if roll < 55 {
                 store.set(&key, &val);
-                match model.iter_mut().find(|(k, _)| *k == key) {
-                    Some(entry) => entry.1 = val,
-                    None => model.push((key.clone(), val)),
-                }
+                model.insert(key.clone(), val);
             } else if roll < 80 {
-                let expected = model
-                    .iter()
-                    .find(|(k, _)| *k == key)
-                    .map(|(_, v)| v.clone());
                 assert_eq!(
                     store.get(&key),
-                    expected.as_deref(),
+                    model.get(&key).map(|v| v.as_str()),
                     "get mismatch at step {} key {} (seed {})",
                     step,
                     key,
                     seed
                 );
             } else {
-                let pos = model.iter().position(|(k, _)| *k == key);
-                let expected = pos.map(|p| model.remove(p).1);
                 assert_eq!(
                     store.delete(&key),
-                    expected,
+                    model.remove(&key),
                     "delete mismatch at step {} key {} (seed {})",
                     step,
                     key,
@@ -419,6 +477,31 @@ mod tests {
                 step,
                 seed
             );
+
+            let from = format!("k{}", rng.next_u64() % 220);
+            let to = format!("k{}", rng.next_u64() % 220);
+            let got: Vec<(&str, &str)> = store.range(&from, &to).collect();
+            if from < to {
+                let want: Vec<(&str, &str)> = model
+                    .range::<String, _>(&from..&to)
+                    .map(|(k, v)| (k.as_str(), v.as_str()))
+                    .collect();
+                assert_eq!(
+                    got, want,
+                    "range mismatch at step {} from {} to {} (seed {})",
+                    step, from, to, seed
+                );
+            } else {
+                assert!(
+                    got.is_empty(),
+                    "range from >= to must be empty at step {} from {} to {} (seed {})",
+                    step,
+                    from,
+                    to,
+                    seed
+                );
+            }
+
             for (k, v) in &model {
                 assert_eq!(
                     store.get(k),
