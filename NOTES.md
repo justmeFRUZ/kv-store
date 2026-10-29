@@ -357,3 +357,24 @@ What the numbers do and do not show:
 - A clean file-size curve needs an in-process timer. Process-level timing on Windows cannot separate spawn from load from save at these magnitudes. Not built; this is the gap.
 - Prediction on record: hundreds of ms at 100k was predicted before running. Output beat prediction.
 - The durable fact for Week 24 is bytes, not milliseconds: every add rewrites the entire file. Bytes rewritten per add: 10,584 -> 1,097,788 -> 11,177,790, linear in task count, O(n) per mutation. Over k adds that is O(k*n) total bytes written, versus O(k) for an append-only log. That argument does not depend on this machine's timings.
+
+## Week 17 Day 1 - TCP echo server design (written before any code)
+
+Scope: this week builds the echo server only. The routes below are fixed now so the echo server's read/write shape and the later parser never need a redesign. Single-threaded accept loop, one connection at a time, read until a 0-byte read, echo back, close. No event loop: a std-only polling loop is an optional overflow branch, labelled honestly as not-epoll, fallback is a bounded thread pool. Thread-per-connection arrives Week 22, keep-alive Week 23; until then every response carries Connection: close.
+
+Routes (fixed now, built Week 19):
+- GET /health -> 200, fixed body, no auth.
+- GET /kv/<key> -> 200 with key<TAB>value, 404 if missing, 400 on bad percent-encoding.
+- PUT /kv/<key> -> 201 with Location header on create, 204 on replace, 400 on bad input.
+- DELETE /kv/<key> -> 204 on delete, 404 if the key was missing.
+- GET /range?from=a&to=z -> 200 with key<TAB>value lines, half-open, from >= to returns empty 200.
+
+Status-code decision: strict REST (option A of A/B/C). PUT answers 201 only on create and 204 on replace; DELETE answers 204 or 404. Rejected: 204-always (B) hides whether a key existed and lets DELETE of a missing key claim success; 201-always for PUT (C) lies on every replace. The lesson this week is HTTP semantics, so the status codes are not where a line is saved.
+
+No Store signature change is needed. Store::delete already returns Option<String>, so DELETE 404 falls out directly. Store::set returns (), so PUT does get-then-set; both run inside one lock scope, so there is no create-versus-replace race. Changing set to return Option<String> is rejected: Option is must_use, so existing tests that call store.set as a statement would raise unused_must_use under clippy --all-targets -D warnings and turn CI red.
+
+Limits (enforced Week 20; named now so the echo server is not built around unbounded reads): request line 8 KiB, headers 8 KiB total, body 1 MiB, key 256 bytes, value 1 MiB. Over-limit answers 414, 431, 413, 414, 413 respectively. Read timeout 5 s, write timeout 5 s, overall per-request deadline 10 s; all configurable and set short in tests.
+
+Error policy: untrusted bytes never panic. Parse errors return 400 and close; unknown path 404; known path with wrong method 405 plus an Allow header; over-limit as above; auth failures 401 (Week 21) with a global failed-attempt throttle answering 429 without comparing the token. Errors are logged to stderr with the peer address and never echoed verbatim to the client. A failed connection never stops the accept loop.
+
+Not in this design: HTTP/2, chunked transfer, Expect: 100-continue, JSON in the server. Bodies are text lines only.
