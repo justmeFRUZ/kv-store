@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+pub mod server;
 /// The skip list module: a probabilistic ordered map used as the range index backing [`Store`].
 pub mod skip;
-pub mod server;
 /// Computes the 64-bit FNV-1a hash of `bytes`.
 ///
 /// Deterministic: the same input always produces the same output.

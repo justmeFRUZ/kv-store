@@ -13,7 +13,9 @@ fn test_echo_round_trip() {
     });
 
     let mut stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
 
     let msg = b"hello";
     stream.write_all(msg).unwrap();
@@ -24,9 +26,8 @@ fn test_echo_round_trip() {
     assert_eq!(&buf, msg);
 }
 
-
 #[test]
-fn  test_echo_100kn() {
+fn test_echo_100kn() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
 
@@ -35,7 +36,9 @@ fn  test_echo_100kn() {
     });
 
     let mut stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
 
     let msg = vec![42u8; 100 * 1024];
     let mut stream_clone = stream.try_clone().unwrap();
@@ -51,7 +54,6 @@ fn  test_echo_100kn() {
     handle.join().unwrap();
     assert_eq!(buf, msg);
 }
-
 
 #[test]
 fn test_abrupt_disconnect_does_not_keill_server() {
@@ -69,7 +71,9 @@ fn test_abrupt_disconnect_does_not_keill_server() {
     thread::sleep(Duration::from_millis(50));
 
     let mut stream = TcpStream::connect(addr).unwrap();
-    stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
 
     let msg = b"still alive";
     stream.write_all(msg).unwrap();
