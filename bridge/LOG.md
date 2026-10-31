@@ -36,3 +36,17 @@
 - Known gap, not fixed: no tag currently has zero tasks, so Q2's LEFT JOIN "0" branch is structurally correct but unexercised by data.
 - Login note: three scram auth failures this session were input-capture artifacts from read -rs, not a wrong password. The wrapper now prints `captured chars=N` before psql so a silent capture failure is visible in the same output.
 - Next: Week 17 bridge slot — indexes and EXPLAIN ANALYZE (100k rows via generate_series).
+
+
+## Week 17 — bridge slot — indexes and EXPLAIN ANALYZE
+
+- Scratch table `bench_kv` in `kvlab`: 100k rows via `generate_series`, keys `k000001`–`k100000`, fixed-width through `lpad(n::text, 6, '0')`. Fixed-width is load-bearing, not cosmetic: verified before the fill that `'k000001' < 'k100000'` returns true on this cluster's Russian-locale collation, so Postgres text ordering agrees with Rust's byte-lexicographic `String` ordering. Without that check the comparison to the skip list would be quietly meaningless.
+- Baseline, no index: point lookup 4.735 ms (`Seq Scan`, `Rows Removed by Filter: 99999`), range of 101 rows 22.856 ms (`Seq Scan`, 99899 removed). Both plans fit in shared buffers (`shared hit=541`).
+- After `CREATE INDEX bench_kv_key_idx ON bench_kv (key)`: point 0.057 ms, range 0.078 ms, both `Index Scan using bench_kv_key_idx`. Ratio: ~83x point, ~293x range.
+- Honest wrinkle: the indexed runs report `Buffers: shared hit=1 read=2` and `hit=2 read=1` — index pages were read from disk, not cache, because `CREATE INDEX` had just written them. That cuts against the index, so the measured speedup is a floor, not a ceiling. Worth one line rather than rounding off.
+- Prediction I got wrong, recorded rather than buried: I expected the 101-row range walk to cost measurably more than the 1-row seek. It did not (0.078 vs 0.057 ms) — the index pages were already cached by then and 101 contiguous index entries are nearly free.
+- Comparison to NOTES.md: NOT a speedup comparison. The hash table's ~166 ns/op at 100k (NOTES.md lines 67–72, in-process Rust) vs Postgres's 57 µs round-trip is ~343x, but those are different jobs — SQL parse, planner, transaction bookkeeping and wire framing on one side, a function call on the other. The comparable ratio is *within* Postgres: 4.735 → 0.057 ms.
+- Flag for weekly check-in: the plan line says "compare with the skip-list numbers," but NOTES.md line 326 records skip-list *ratios* only (get ~1.8–2.0x vs `BTreeMap`), no absolute ms. That comparison cannot be made literally from disk. Options next week: rerun the skip list recording absolutes, accept ratio-only, or substitute the hash-table absolutes (what was actually done here).
+- Files: `bridge/bench_index.sql` (create table), `bench_fill.sql` (100k insert), `bench_verify.sql` (empty/index-count/collation check), `bench_index_create.sql` (index + `\d`), `bench_baseline.sql` (ANALYZE + two EXPLAIN ANALYZE). Scratch table `bench_kv` and its index still exist in `kvlab`.
+- Next: Week 18 bridge slot — transactions and normalization (BEGIN/ROLLBACK demonstrating atomicity; 3NF note).
+
