@@ -9,15 +9,12 @@ pub fn run(addr: &str) -> std::io::Result<()> {
 
 pub fn serve(listener: TcpListener) -> std::io::Result<()> {
     loop {
-        match listener.accept() {
-            Ok((stream, peer_addr)) => {
-                if let Err(e) = handle_client(stream, peer_addr) {
-                    eprintln!("connection error: {}", e);
-                }
-            }
-            Err(e) => {
-                eprintln!("accept error: {}", e);
-            }
+        let Some((stream, peer_addr)) = next_or_log(listener.accept()) else {
+            continue;
+        };
+
+        if let Err(e) = handle_client(stream, peer_addr) {
+            eprintln!("connection error: {}", e);
         }
     }
 }
@@ -34,5 +31,37 @@ fn handle_client(mut stream: TcpStream, peer_addr: SocketAddr) -> std::io::Resul
         }
         total += bytes_read;
         stream.write_all(&buf[..bytes_read])?;
+    }
+}
+
+fn next_or_log(
+    accept_result: std::io::Result<(TcpStream, SocketAddr)>,
+) -> Option<(TcpStream, SocketAddr)> {
+    match accept_result {
+        Ok(pair) => Some(pair),
+        Err(e) => {
+            eprintln!("accept error: {}", e);
+            None
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn next_or_log_returns_none_on_err() {
+        let err = std::io::Error::other("synthetic accept failure");
+        assert!(next_or_log(Err(err)).is_none());
+    }
+
+    #[test]
+    fn next_or_log_returns_some_on_ok() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let addr = listener.local_addr().expect("local addr");
+        let _client = TcpStream::connect(addr).expect("connect");
+        let accepted = listener.accept();
+        assert!(next_or_log(accepted).is_some());
     }
 }
