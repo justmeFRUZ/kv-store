@@ -378,3 +378,28 @@ Limits (enforced Week 20; named now so the echo server is not built around unbou
 Error policy: untrusted bytes never panic. Parse errors return 400 and close; unknown path 404; known path with wrong method 405 plus an Allow header; over-limit as above; auth failures 401 (Week 21) with a global failed-attempt throttle answering 429 without comparing the token. Errors are logged to stderr with the peer address and never echoed verbatim to the client. A failed connection never stops the accept loop.
 
 Not in this design: HTTP/2, chunked transfer, Expect: 100-continue, JSON in the server. Bodies are text lines only.
+
+## Week 17 Day 3 - curl's raw bytes, annotated
+
+Captured with `curl -v --max-time 3 http://127.0.0.1:7878/` against the running echo server. The `>` lines are the bytes curl sent; `*` lines are curl's own diagnostics, not wire bytes. The server's stderr logged `127.0.0.1:49403 sent 78 bytes`, and the bytes below count to 78 by hand, so the record and the server agree.
+
+Raw bytes as sent. The four lines below are the wire bytes, in order. After them comes a fifth line, empty: it is a bare CRLF on its own and it is the header terminator. Every line ends with CRLF; the CRLFs are invisible in this listing.
+
+    GET / HTTP/1.1
+    Host: 127.0.0.1:7878
+    User-Agent: curl/8.21.0
+    Accept: */*
+
+Byte accounting: request line 16 (14 chars + CRLF), `Host` 22, `User-Agent` 25, `Accept` 13, blank line 2. Total 78. Matches the server's count.
+
+Annotated, line by line:
+
+1. `GET / HTTP/1.1` - the client is asking the server to hand over whatever lives at the root path, and it is saying it will speak version 1.1 of the protocol while doing so.
+2. `Host: 127.0.0.1:7878` - names the address and port the client thinks it is talking to, so a server hosting many sites on one machine knows which one the request is meant for.
+3. `User-Agent: curl/8.21.0` - the client introducing itself by program name and version, so the server and its logs can tell what kind of software is asking.
+4. `Accept: */*` - the client saying it will take a response in any content type, so the server does not need to match a particular format.
+5. The empty line - the signal that the list of header lines is finished; the server reads line by line until it hits this gap, and only then knows the headers are complete and that anything after it is the body (here there is none). Without it, the server would keep waiting for more headers and never respond.
+
+On line endings: every line on the wire ends with two invisible bytes, carriage return then line feed, and that pair is the real line separator in HTTP. The empty line is really a bare CRLF arriving right after the previous line's CRLF, giving CRLF CRLF, which is what marks the end of the headers. That double sequence is what the Week 18 parser has to look for, not a single newline.
+
+Not a bug: curl reports `Received HTTP/0.9 when not allowed` and `Invalid response header`, then exits with code 1. The echo server sends the request bytes straight back, so curl reads `GET / HTTP/1.1` as the first line of a response and cannot parse a status line from it. This is the expected shape for an echo server, not a server fault. A real HTTP response (status line first) arrives in Week 18.
