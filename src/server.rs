@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 
 pub fn run(addr: &str) -> std::io::Result<()> {
     let listener = TcpListener::bind(addr)?;
@@ -8,10 +8,10 @@ pub fn run(addr: &str) -> std::io::Result<()> {
 }
 
 pub fn serve(listener: TcpListener) -> std::io::Result<()> {
-    for stream in listener.incoming() {
-        match stream {
-            Ok(stream) => {
-                if let Err(e) = handle_client(stream) {
+    loop {
+        match listener.accept() {
+            Ok((stream, peer_addr)) => {
+                if let Err(e) = handle_client(stream, peer_addr) {
                     eprintln!("connection error: {}", e);
                 }
             }
@@ -20,17 +20,19 @@ pub fn serve(listener: TcpListener) -> std::io::Result<()> {
             }
         }
     }
-    Ok(())
 }
 
-fn handle_client(mut stream: TcpStream) -> std::io::Result<()> {
+fn handle_client(mut stream: TcpStream, peer_addr: SocketAddr) -> std::io::Result<()> {
     let mut buf = [0; 1024];
+    let mut total: usize = 0;
     loop {
         let bytes_read = stream.read(&mut buf)?;
         if bytes_read == 0 {
             // 0-byte read means the client closed the connection
+            eprintln!("{} sent {} bytes", peer_addr, total);
             return Ok(());
         }
+        total += bytes_read;
         stream.write_all(&buf[..bytes_read])?;
     }
 }
