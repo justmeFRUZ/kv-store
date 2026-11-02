@@ -403,3 +403,18 @@ Annotated, line by line:
 On line endings: every line on the wire ends with two invisible bytes, carriage return then line feed, and that pair is the real line separator in HTTP. The empty line is really a bare CRLF arriving right after the previous line's CRLF, giving CRLF CRLF, which is what marks the end of the headers. That double sequence is what the Week 18 parser has to look for, not a single newline.
 
 Not a bug: curl reports `Received HTTP/0.9 when not allowed` and `Invalid response header`, then exits with code 1. The echo server sends the request bytes straight back, so curl reads `GET / HTTP/1.1` as the first line of a response and cannot parse a status line from it. This is the expected shape for an echo server, not a server fault. A real HTTP response (status line first) arrives in Week 18.
+
+## Weekly log — hours banked, checkpoint pass/fail
+
+One line per week, per the Stage 2 standing rule. Hours were not recorded before Week 17; the gap is shown rather than back-filled with invented numbers. Recording starts Week 18.
+
+- Week 16 — checkpoint PASS (Month 4): public repo, CI green on both OSes, skip list passes oracle with invariants, `Store::range` works, README/NOTES updated, join run on own schema. Hours: not recorded.
+- Week 17 — checkpoint PASS: echo server survives abrupt disconnect, CI green on 490fea9 (both OSes), curl's raw bytes annotated in NOTES.md. All four weekday tasks merged (PRs #6-#9). Hours: not recorded.
+
+Week 17 check-in — flags:
+
+- Flag 1 (NOTES line 326 skip-list ratios, no absolutes): accepted, not fixed. The plan line "compare with the skip-list numbers" cannot be made literally from disk. The index benchmark used the hash-table absolutes instead and said so in bridge/LOG.md. No further action.
+- Flag 2 (VS Code final newline): fixed. `files.insertFinalNewline` on, `files.trimFinalNewlines` off. Note: `.gitattributes` itself still lacked a final newline from before the fix; corrected in this branch.
+- Flag 3 (`.gitattributes` had no `*.sql` rule): fixed in this branch, commit 935dab9. Added `*.sql text eol=lf` and `.gitattributes text eol=lf`. Proven by fresh clone: both files `i/lf w/lf`, `eol: lf`.
+- Flag 4 (stale branches): fixed. 7 local and 9 remote merged branches deleted. The flag named 3; disk showed more, all merged.
+- Flag 5 (`bench_kv` and its index in `kvlab`): decision — drop. Rows regenerate from `bridge/bench_fill.sql` in seconds; the record lives in `bridge/LOG.md`, not the table. Deletion is a hand-run `psql` command.
