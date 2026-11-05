@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+pub mod parse;
 pub mod server;
 /// The skip list module: a probabilistic ordered map used as the range index backing [`Store`].
 pub mod skip;
