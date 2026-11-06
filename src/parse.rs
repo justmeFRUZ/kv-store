@@ -15,6 +15,7 @@ pub struct Request {
     pub path: String,
     pub version: String,
     pub headers: Vec<(String, String)>,
+    pub body: Vec<u8>,
 }
 
 pub fn parse_request(input: &[u8]) -> ParseResult {
@@ -128,6 +129,7 @@ pub fn parse_request(input: &[u8]) -> ParseResult {
             path,
             version,
             headers,
+            body: Vec::new(),
         },
         consumed: header_end + 4,
     }
