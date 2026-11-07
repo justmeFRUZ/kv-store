@@ -123,15 +123,38 @@ pub fn parse_request(input: &[u8]) -> ParseResult {
         pos = next + 2;
         // Parse header
     }
+    let mut content_length: Option<usize> = None;
+    for (name, value) in &headers {
+        if name == "content-length" {
+            if content_length.is_some()
+                || value.is_empty()
+                || !value.bytes().all(|b| b.is_ascii_digit())
+            {
+                return ParseResult::Error;
+            }
+            content_length = match value.parse::<usize>() {
+                Ok(n) => Some(n),
+                Err(_) => return ParseResult::Error,
+            };
+        }
+    }
+
+    let body_len = content_length.unwrap_or_default();
+    let body_start = header_end + 4;
+    if input.len() - body_start < body_len {
+        return ParseResult::Incomplete;
+    }
+    let body = input[body_start..body_start + body_len].to_vec();
+
     ParseResult::Complete {
         request: Request {
             method,
             path,
             version,
             headers,
-            body: Vec::new(),
+            body,
         },
-        consumed: header_end + 4,
+        consumed: body_start + body_len,
     }
 }
 
@@ -247,6 +270,119 @@ mod tests {
                 "expected Error for {:?}",
                 input
             );
+        }
+    }
+
+    #[test]
+    fn body_valid() {
+        let cases: &[(&[u8], &[u8])] = &[
+            (b"GET / HTTP/1.1\r\n\r\n" as &[u8], b"" as &[u8]),
+            (
+                b"GET / HTTP/1.1\r\nContent-Length: 0\r\n\r\n" as &[u8],
+                b"" as &[u8],
+            ),
+            (
+                b"PUT /kv/foo HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello" as &[u8],
+                b"hello" as &[u8],
+            ),
+            (
+                b"PUT /kv/foo HTTP/1.1\r\ncontent-length: 5\r\n\r\nhello" as &[u8],
+                b"hello" as &[u8],
+            ),
+            (
+                b"PUT /kv/foo HTTP/1.1\r\nCONTENT-LENGTH: 5\r\n\r\nhello" as &[u8],
+                b"hello" as &[u8],
+            ),
+        ];
+        for (input, expected_body) in cases {
+            match parse_request(input) {
+                ParseResult::Complete { request, consumed } => {
+                    assert_eq!(
+                        request.body.as_slice(),
+                        *expected_body,
+                        "body for {:?}",
+                        input
+                    );
+                    assert_eq!(consumed, input.len(), "consumed for {:?}", input);
+                }
+                other => panic!("expected Complete for {:?}, got {:?}", input, other),
+            }
+        }
+    }
+
+    #[test]
+    fn body_incomplete() {
+        let cases: &[&[u8]] = &[
+            b"PUT / HTTP/1.1\r\nContent-Length: 5\r\n\r\nhel" as &[u8],
+            b"PUT / HTTP/1.1\r\nContent-Length: 5\r\n\r\n" as &[u8],
+        ];
+        for input in cases {
+            assert!(
+                matches!(parse_request(input), ParseResult::Incomplete),
+                "expected Incomplete for {:?}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn body_error() {
+        let cases: &[&[u8]] = &[
+            b"PUT / HTTP/1.1\r\nContent-Length: abc\r\n\r\n" as &[u8],
+            b"PUT / HTTP/1.1\r\nContent-Length: -1\r\n\r\n" as &[u8],
+            b"PUT / HTTP/1.1\r\nContent-Length: +5\r\n\r\nhello" as &[u8],
+            b"PUT / HTTP/1.1\r\nContent-Length: 99999999999999999999\r\n\r\n" as &[u8],
+            b"PUT / HTTP/1.1\r\nContent-Length: 5\r\nContent-Length: 5\r\n\r\nhello" as &[u8],
+        ];
+        for input in cases {
+            assert!(
+                matches!(parse_request(input), ParseResult::Error),
+                "expected Error for {:?}",
+                input
+            );
+        }
+    }
+
+    #[test]
+    fn body_byte_at_a_time() {
+        let full = b"PUT /kv/foo HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello";
+        for n in 0..full.len() {
+            assert!(
+                matches!(parse_request(&full[..n]), ParseResult::Incomplete),
+                "expected Incomplete for {:?}",
+                n
+            );
+        }
+        match parse_request(full) {
+            ParseResult::Complete { request, consumed } => {
+                assert_eq!(request.body.as_slice(), b"hello");
+                assert_eq!(consumed, full.len());
+            }
+            other => panic!("expected Complete at full lenght, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn bare_lf_inside_header_block() {
+        let input = b"GET / HTTP/1.1\r\nHost: x\nFoo: bar\r\n\r\n";
+        assert!(
+            matches!(parse_request(input), ParseResult::Error),
+            "expected Error for bare LF inside header block"
+        );
+    }
+
+    #[test]
+    fn body_pipelined_extra_bytes() {
+        let second = b"GET / HTTP/1.1\r\n\r\n";
+        let mut full = Vec::new();
+        full.extend_from_slice(b"PUT /kv/foo HTTP/1.1\r\nContent-Length: 5\r\n\r\nhello");
+        full.extend_from_slice(second);
+        match parse_request(&full) {
+            ParseResult::Complete { request, consumed } => {
+                assert_eq!(request.body.as_slice(), b"hello");
+                assert_eq!(consumed, full.len() - second.len());
+            }
+            other => panic!("expected Complete, got {:?}", other),
         }
     }
 }
