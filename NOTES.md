@@ -418,3 +418,21 @@ Week 17 check-in — flags:
 - Flag 3 (`.gitattributes` had no `*.sql` rule): fixed in this branch, commit 935dab9. Added `*.sql text eol=lf` and `.gitattributes text eol=lf`. Proven by fresh clone: both files `i/lf w/lf`, `eol: lf`.
 - Flag 4 (stale branches): fixed. 7 local and 9 remote merged branches deleted. The flag named 3; disk showed more, all merged.
 - Flag 5 (`bench_kv` and its index in `kvlab`): decision — drop. Rows regenerate from `bridge/bench_fill.sql` in seconds; the record lives in `bridge/LOG.md`, not the table. Deletion is a hand-run `psql` command.
+
+## Week 18 — HTTP/1.1 parser decisions
+
+- **Bare `\n` (LF not preceded by `\r`) anywhere in the request buffer is `Error`.** Plan's rule ("bare `\n` line endings get 400"), implemented in `has_bare_lf` at the top of `parse_request`, before any other check. Consequence: a bare LF inside a header block that has not yet reached `\r\n\r\n` also errors — stricter than "wait for the terminator, then check." Tested for the request-line case only; a bare LF inside a header block has no test today, deferred to Weekend B.
+- **Header names containing any ASCII whitespace are `Error`.** RFC 7230 §3.2.4 forbids whitespace between field-name and colon; `Host : x` is rejected. Enforced by `has_whitespace(name_bytes)`.
+- **Header values are trimmed of leading/trailing ASCII whitespace.** Values otherwise byte-exact.
+- **Method token is syntactically free** — parser accepts any non-empty, non-space, UTF-8 byte sequence in the method slot; the router (Week 19) maps it to status codes. This is a deliberate layering choice, not an oversight.
+- **Host header not enforced at the parser layer.** RFC 9112 §3.2 requires it in HTTP/1.1; deferred to router. Flagged for weekly check-in — the plan does not name which layer owns this, so if the plan intended parser-level enforcement, this is a deviation to record.
+
+## Week 18 Weekend B — body via Content-Length
+
+- **Optional header.** No `Content-Length` → empty body. `Content-Length: 0` is legal and equivalent. Bare headers-only requests (Weekend A) still parse: `body: Vec::new()`, `consumed = header_end + 4`.
+- **Case-insensitive match, single occurrence.** Header name matched after the existing per-header lowercasing (Weekend A decision). Duplicate `Content-Length` → `Error`, not "last wins" and not "sum". RFC 7230 §3.3.2 permits rejection; this parser chooses rejection over either ambiguous alternative.
+- **Value validation.** Rejected (`Error`) if: value is empty; contains any non-ASCII-digit byte (`abc`, `-1`, `+5`); overflows `usize` via `usize::from_str`; or the header appears more than once. The existing per-value ASCII-whitespace trim (Weekend A decision) runs first, so `Content-Length:  5 ` parses as `5` — the digit check sees `5`, not `  5 `.
+- **Incomplete body returns `Incomplete`, not `Error`.** If `input.len() < body_start + body_len`, the parser asks for more. Same stream semantics as the request line and headers: caller loops until `Complete` or `Error`. Tested by `body_incomplete` and `body_byte_at_a_time` (every prefix of a 5-byte-body request is `Incomplete`).
+- **`consumed` ends at this request's body, not at `input.len()`.** `body_start + body_len`. Extra bytes belong to the next pipelined request and must not be swallowed. Tested by `body_pipelined_extra_bytes` (request + second request → `consumed == first.len()`).
+- **Bare LF in the body is rejected — recorded limitation, not a bug.** `has_bare_lf` runs on the entire buffer (Weekend A decision, top of `parse_request`), so a body containing `\n` without `\r` returns `Error` even with a correct `Content-Length`. For the text-only bodies Stage 2's server handles (plan: "JSON in server (text only)"), this is acceptable. Binary bodies would need the LF check scoped to `input[..header_end]`; deferred.
+- **Supersedes the Weekend A note** "a bare LF inside a header block has no test today, deferred to Weekend B": now tested by `bare_lf_inside_header_block` and covered by `body_byte_at_a_time` for the body boundary. Both green.
